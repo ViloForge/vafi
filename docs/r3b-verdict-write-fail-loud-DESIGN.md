@@ -70,9 +70,57 @@ escalates promptly when vtf is reachable.
 3. escalation also failing → logged, never raised (reaper backstop).
 4. happy path → `submit_review` awaited; `fail()` never called.
 
-## Acceptance / regression (pending cluster)
+## Deploy + dogfood (2026-05-20)
 
-Dogfood against the lifecycle experiment once vafi-dev is reachable:
-induce a verdict-write failure for a `pending_completion_review` task and
-assert the controller drives it to `needs_attention` (not a 30-min stall).
-Until deployed, R3b is IMPLEMENTED, not DELIVERED.
+Deployed: vafi#24 merged (main `59abe10`), built (`vafi-build-9zx5m`),
+tag-bumped (viloforge-platform `6c0d19b`), ArgoCD rolled vafi-judge to
+`vafi-agent:59abe10`. R3b escalation source confirmed present in the
+running image (`controller.py:378`).
+
+**Live happy-path regression — PASS.** The deployed judge polls
+`/v2/reviews/pending/` cleanly and ran a full review cycle (pick up →
+harness → verdict → `submit_review` 201).
+
+**Escalation trigger surface — empirically refined (key finding).**
+Attempted injection: a `judge=true` task in `pending_completion_review`
+pointed at an unreachable repo. Result: the judge's `execute()` **caught**
+the clone failure and **returned a failure result** — it did NOT raise —
+so `_parse_verdict` defaulted to `changes_requested` and `submit_review`
+**succeeded (201)**. R3b's `except` was therefore never entered. The task
+still reached `needs_attention` (no silent stall) — but via the
+*executor's* pre-existing fail-loud (`_process_task`) after re-attempt,
+not R3b.
+
+Conclusion: R3b's `except` fires **only** when `submit_review()` itself
+raises (the true #18 verdict-write failure) or an exception escapes
+`execute()` (rare — the invoker catches clone/exec errors). In the
+deployed system `submit_review` does not fail on demand: authz-403 is
+closed by R2 (judge has fleet authority — 201 even on a non-member
+project), clone/harness failures are handled gracefully, and the
+remaining triggers (vtf 5xx / connection drop mid-write, e.g. a rolling
+restart) require fault injection or a racy outage to reproduce. **R3b
+thus guards a real but not-on-demand-triggerable failure mode (transient
+vtf unavailability during the verdict write).**
+
+**Live escalation — PROVEN (2026-05-20).** The fault-injection harness
+(`docs/fault-injection-DESIGN.md`, vafi `ea42ddd`) made the trigger
+reproducible. With `VF_FAULT_INJECT=submit_review:1` on the judge, a
+`judge=true` task in `pending_completion_review` exercised the exact R3b
+path end-to-end:
+
+```
+controller.invoker  ERROR  Git clone failed (execute() returns a result, not raise)
+fault_injection     WARNING VF_FAULT_INJECT: raising on submit_review
+controller          ERROR  Error reviewing task …: injected fault on submit_review
+httpx               POST …/notes/  201
+httpx               POST …/fail/   200
+```
+Task event: `status_changed | fail | {"to":"needs_attention","from":
+"pending_completion_review"}` — driven directly from review state by the
+judge's `fail()` (R3b), not the executor. Reproducible any time via the
+harness.
+
+**Status: DELIVERED.** Deployed (vafi-judge `ea42ddd`), happy-path
+regression verified live, escalation proven both by the unit suite (4
+cases) and a deterministic live dogfood. The original "induce a
+verdict-write failure → needs_attention" bar is met.
