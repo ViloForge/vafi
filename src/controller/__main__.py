@@ -11,6 +11,7 @@ from controller.config import AgentConfig
 from controller.controller import Controller
 from vtf_sdk.async_client import AsyncVtfClient
 from controller.worksources.vtf import VtfWorkSource
+from controller.worksources.fault_injection import maybe_wrap_faults
 
 
 def setup_logging():
@@ -39,6 +40,11 @@ async def main():
         async with vtf_client:
             # Create VtfWorkSource
             work_source = VtfWorkSource(client=vtf_client, tags=config.agent_tags, pod_name=config.pod_name)
+
+            # Fail-loud verification harness: wraps the work source only when
+            # VF_FAULT_INJECT is set (no-op + byte-identical in prod). See
+            # docs/fault-injection-DESIGN.md.
+            work_source = maybe_wrap_faults(work_source)
 
             # Create Controller
             controller = Controller(work_source=work_source, config=config)
