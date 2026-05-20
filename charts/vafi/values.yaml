@@ -28,7 +28,14 @@ fullnameOverride: ""
 executor:
   replicas: 1
   role: executor
-  tags: "executor"
+  # R4 (routing determinism, F5): the Claude and Pi executor pools carry
+  # DISJOINT capability tags ("claude" vs "pi") with no shared "executor"
+  # tag. vtaskforge claim matching is subset-based (task.required_tags must
+  # be a subset of the agent's tags), so a task pins exactly one harness via
+  # required_tags=[claude] or [pi]; there is no generic tag that matches both
+  # pools, making cross-harness routing impossible by construction. (Before
+  # R4 both pools shared "executor"; required_tags=[executor] matched both.)
+  tags: "claude"
   # Optional explicit identity override. When empty (default) the controller
   # derives the agent name from the sorted tag set (e.g. "executor" or
   # "executor-pi"); see vafi#3 / controller commit e71e2af. Set per
@@ -63,8 +70,9 @@ executor:
 # Executor (Pi harness) — Pi-based agent for pi-tagged tasks
 # ---------------------------------------------------------------------------
 # Runs a separate deployment of the executor controller with the pi harness
-# image. Agents register with tags "executor,pi" and only claim pi-tagged
-# tasks. Set replicas to 0 to disable.
+# image. Agents register with the disjoint tag "pi" (R4 routing determinism)
+# and only claim tasks pinned to required_tags=[pi]. Set replicas to 0 /
+# enabled:false to disable.
 executorPi:
   # Disabled by default — enable per-environment (see vafi-deploy/environments/*.yaml).
   # Prevents unused pi executor pods in environments with no pi workload.
@@ -80,7 +88,7 @@ executorPi:
     storage: ""              # empty = inherit .Values.sessions.storage
     storageClassName: ""     # empty = inherit .Values.sessions.storageClassName
   role: executor
-  tags: "executor,pi"
+  tags: "pi"               # R4: disjoint from the Claude pool's "claude"
   agentId: ""              # see executor.agentId for override semantics
   pollInterval: 30
   taskTimeout: 600
