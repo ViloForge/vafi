@@ -31,13 +31,13 @@ closed-system ghost-completion weakness.
 | ID | Sev | One-line | Status |
 |----|-----|----------|--------|
 | F1 | — | vfobs emission is live end-to-end post-L4b (behavior-verified, not just capability) | ✅ |
-| F3 | High | `vfobs-watch --crash-seconds` default (120) < controller `heartbeat_interval` (300) ⇒ false-positive CRASHED on healthy >300s tasks | ✅ |
-| F4 | **Critical** | Heartbeat loop sleeps 300s *before* first emit; workdir-change is a sub-step of it ⇒ sub-300s tasks emit zero heartbeat/workdir ⇒ `Stall`+`Crashed` both inert (gated on `last_heartbeat_at`) ⇒ proactive stuck-detection structurally non-functional for the common task class | ✅ |
+| F3 | High | `vfobs-watch --crash-seconds` default (120) < controller `heartbeat_interval` (300) ⇒ false-positive CRASHED on healthy >300s tasks | ✅ → **FIXED (R5)** `from_cadence()` |
+| F4 | **Critical** | Heartbeat loop sleeps 300s *before* first emit; workdir-change is a sub-step of it ⇒ sub-300s tasks emit zero heartbeat/workdir ⇒ `Stall`+`Crashed` both inert (gated on `last_heartbeat_at`) ⇒ proactive stuck-detection structurally non-functional for the common task class | ✅ → **FIXED (R5)** beat-on-entry |
 | F5 | Med | `required_tags=executor` matches *both* `executor` and `executor-pi` (`executor,pi`) pools ⇒ silent claim race, nondeterministic harness per task | ✅ |
 | F6 | High | Controller→**Pi**-harness prompt construction did not deliver the persisted task spec; agent self-reported "no task specified" though vtf stored an 795-char spec | ⚠ (Pi-path specific; Claude path delivers fine) |
 | F7 | **Critical** | No `test_command` ⇒ `GateRunner` builds zero gates ⇒ task success == "agent process exited 0"; `acceptance_criteria` never machine-checked; judge LLM affirmatively approved an empty workdir | ✅ |
 | F8 | — | (Retracted) review record *is* persisted (`POST /v2/tasks/<id>/reviews/ 201`); earlier empty `reviews[]` was a `task show` serialization nuance | ✅ |
-| F9 | High | A task with **no milestone** emits zero vfobs events (`workgraph_id ← milestone.id`; empty ⇒ emission skipped) ⇒ milestone-less tasks fully invisible to proactive observability | ✅ |
+| F9 | High | A task with **no milestone** emits zero vfobs events (`workgraph_id ← milestone.id`; empty ⇒ emission skipped) ⇒ milestone-less tasks fully invisible to proactive observability | ✅ → **FIXED (R5)** synth `task-<id>` |
 | F10 | **Critical** | Even *with* an externally-grounded `test_command`, the gate runs in the ephemeral pod workdir; an agent that locally-commits but never pushes/opens the required PR still passes, task→done, judge approves — deliverable lost, indistinguishable from a no-op from the repo's perspective | ✅ |
 
 ## Detail & mechanism
@@ -141,6 +141,24 @@ common task class (F4) and entirely absent for milestone-less tasks (F9).
    error rather than silently un-observable.
 5. **F5 — make harness selection explicit** (distinct required tags per
    pool) so experiments and routing are deterministic.
+
+### Remediation status (R5, 2026-05-21)
+
+- **F4 — DONE** (remediation #2, cadence path): `heartbeat_loop` now
+  beats + emits on loop entry and sleeps at the tail, so the first
+  heartbeat/workdir signal lands at t≈0 instead of after a full
+  interval. The richer "derive liveness from `harness.turn_*`" option is
+  deliberately *deferred* — live mid-run harness streaming is a later WG
+  (the cadence fix alone restores a complete monotonic stream). See
+  `docs/r5-observability-completeness-DESIGN.md` §6.
+- **F3 — DONE**: `vfobs-watch` thresholds now derive from the controller
+  cadence via `from_cadence(heartbeat_interval)` (crash = 2× interval,
+  stall = 1× interval) instead of hardcoded 120/60; CLI `--heartbeat-
+  interval`.
+- **F9 — DONE**: milestone-less tasks get a stable synthetic
+  `workgraph_id = "task-<id>"` at the vtf worksource boundary, so they
+  emit instead of being dropped.
+- **F5 — DONE** earlier (R4, disjoint claude/pi tags).
 
 ## Tracking issues
 
