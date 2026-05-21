@@ -142,7 +142,21 @@ common task class (F4) and entirely absent for milestone-less tasks (F9).
 5. **F5 — make harness selection explicit** (distinct required tags per
    pool) so experiments and routing are deterministic.
 
-### Remediation status (R5, 2026-05-21)
+### Remediation status (R5, 2026-05-21) — LIVE-VERIFIED on vafi-dev
+
+Dogfood: one milestone-less task (`mdnHqwIrctd9qZXVc-XC6`) claimed by the
+`claude` pool. vfobs `/tasks/<id>/events` showed, all under synthetic
+`workgraph_id = task-<id>`:
+`task.claimed 09:43:29.983 → task.heartbeat 09:43:33.277 →
+task.workdir_changed 09:43:33.342 → harness.turn_started 09:43:33.487`.
+- **F4 verified**: heartbeat+workdir landed at **t≈3.3s** after claim
+  (not t≈300s) — the pre-fix loop would have emitted neither for a
+  <300s task.
+- **F9 verified**: the milestone-less task's events are present and
+  carry `workgraph_id=task-mdnHqwIrctd9qZXVc-XC6` (pre-fix: zero events).
+- **F3 verified**: `vfobs-watch --once` at 09:46:28 (a ~175s heartbeat
+  gap, > the old `crash_s=120` default) reported **OK**, not CRASHED.
+
 
 - **F4 — DONE** (remediation #2, cadence path): `heartbeat_loop` now
   beats + emits on loop entry and sleeps at the tail, so the first
