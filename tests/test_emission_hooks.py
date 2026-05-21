@@ -207,6 +207,37 @@ async def test_heartbeat_loop_emits_heartbeat_and_workdir(
 
 
 @pytest.mark.asyncio
+async def test_heartbeat_loop_emits_before_first_interval(
+    recording_events, tmp_path
+):
+    """F4 (Critical): the first heartbeat + workdir signal must fire on
+    loop ENTRY, before the first interval sleep. Otherwise a task that
+    finishes in < heartbeat_interval (the common task class) emits
+    nothing, and the watcher's Stall/Crashed rules — both gated on
+    last_heartbeat_at — never arm. Uses a large interval and cancels
+    well before it elapses: with the old sleep-at-top loop this records
+    zero events; with the fix it records the entry tick."""
+    (tmp_path / "f").write_text("v1")
+    ws = AsyncMock()
+    rec = RecordingEmitter()
+    task = asyncio.create_task(heartbeat_loop(
+        ws, "t_short", 600,  # would-be 600s interval; we cancel at 50ms
+        workgraph_id="wg_9", workdir=tmp_path, emitter=rec, source="src",
+    ))
+    await asyncio.sleep(0.05)
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    kinds = {e["_event"] for e in rec.events}
+    assert "task_heartbeat" in kinds  # entry tick, not after the 600s sleep
+    assert "task_workdir_changed" in kinds  # first sig ≠ None ⇒ emitted
+    ws.heartbeat.assert_awaited()  # vtf keepalive also fires on entry
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_loop_default_args_unchanged(monkeypatch):
     """V16: existing callers (no kw args) still work — no emit, no
     raise, just the original keepalive behaviour."""

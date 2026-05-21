@@ -103,6 +103,26 @@ class TestVtfWorkSource:
         assert isinstance(result, TaskInfo)
         assert result.id == "task_123"
 
+    def test_sdk_task_to_info_synthesizes_workgraph_id_when_no_milestone(self):
+        """F9 (High): a task with no milestone must still get a stable,
+        namespaced synthetic workgraph_id ('task-<id>') so its events are
+        emitted instead of dropped. Milestone-less tasks (one-off spikes,
+        ad-hoc bugfixes) were previously fully invisible to observability."""
+        task = _make_sdk_task(id="task_solo", title="Standalone")  # no milestone
+        info = self.work_source._sdk_task_to_info(task)
+        assert info.workgraph_id == "task-task_solo"
+
+    def test_sdk_task_to_info_uses_milestone_id_verbatim(self):
+        """A real milestone id is used unchanged (no prefix) — only the
+        absent case is synthesized."""
+        from vtf_sdk.refs import MilestoneRef
+        task = _make_sdk_task(
+            id="t1",
+            milestone=MilestoneRef(id="ms_abc", name="WG", status="active"),
+        )
+        info = self.work_source._sdk_task_to_info(task)
+        assert info.workgraph_id == "ms_abc"
+
     async def test_poll_reviews_calls_reviews_pending_not_tasks_list(self):
         """Regression for vtaskforge#6.
 

@@ -242,7 +242,14 @@ class VtfWorkSource:
         # vfobs "workgraph" == vtaskforge milestone (verified vs the
         # vtf SDK Task entity — there is no workgraph in vtaskforge;
         # the WG vtf-imports each create one milestone per workgraph).
-        workgraph_id = task.milestone.id if task.milestone else ""
+        # F9 (High): a milestone-less task is a legitimate run (one-off
+        # spike, ad-hoc bugfix) but had workgraph_id="" ⇒ safe_emit
+        # dropped every event ⇒ invisible. Synthesize a stable,
+        # namespaced, self-describing id ("task-<id>") so the run is
+        # observable. The "task-" prefix cannot collide with a vtaskforge
+        # milestone nanoid and tells a retro reader "standalone, not a
+        # milestone DAG". vfobs treats it as an opaque workgraph_id.
+        workgraph_id = task.milestone.id if task.milestone else f"task-{task.id}"
         return TaskInfo(
             id=task.id,
             title=task.title,
