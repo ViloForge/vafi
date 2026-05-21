@@ -90,8 +90,12 @@ async def heartbeat_loop(
 
     try:
         while True:
-            await asyncio.sleep(interval_seconds)
-
+            # F4 (Critical): beat + emit on ENTRY, sleep at the TAIL —
+            # mirrors agent_heartbeat_loop. The old loop slept first, so
+            # the first heartbeat/workdir signal was delayed by a full
+            # interval (300s default) and a task finishing in < interval
+            # emitted nothing, leaving the watcher's last_heartbeat_at
+            # unset and proactive stuck-detection structurally inert.
             try:
                 await work_source.heartbeat(task_id)
                 logger.debug(f"Heartbeat sent for task {task_id}")
@@ -118,6 +122,8 @@ async def heartbeat_loop(
                             workgraph_id=workgraph_id, task_id=task_id,
                             source=source, files_changed=0, commits=0,
                         )
+
+            await asyncio.sleep(interval_seconds)
 
     except asyncio.CancelledError:
         logger.info(f"Heartbeat loop cancelled for task {task_id}")
