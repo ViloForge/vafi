@@ -17,11 +17,14 @@ Pyramid level: integration (real git + real GateRunner.run_gates; hermetic).
 
 import subprocess
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 
+from controller.config import AgentConfig
+from controller.controller import Controller
 from controller.gates import GateRunner, deliverable_branch
-from controller.types import TaskInfo, RepoInfo
+from controller.types import AgentInfo, ExecutionResult, TaskInfo, RepoInfo
 
 BASE = "main"
 TEST_COMMAND = {"command": "python test_prime.py"}  # spec-author's gate; fixed for all 3
@@ -114,3 +117,65 @@ async def test_broken_impl_weakened_test_must_fail(origin):
     origin_path, tmp_path = origin
     assert await _gates_pass(origin_path, tmp_path, "tamper",
                              {"prime.py": PRIME_BROKEN, "test_prime.py": TEST_WEAKENED}) is False
+
+
+# --- Controller-assembly integration (real execute() + real gates + real git) ---
+# Only the harness (LLM) and the SSH-clone seam are stubbed; everything else is
+# the real controller path. This is stronger than the gate-in-isolation tests
+# above. NOTE: true scenario-level coverage (real cluster + real executor) is
+# gated on the P2-3 controller note-400 fix and is tracked on PR #34 — this
+# integration test is the closest faithful coverage achievable without a cluster.
+
+def _mock_ws():
+    ws = Mock()
+    for m in ("get_task_repo_info", "get_task_context", "heartbeat",
+              "agent_heartbeat", "add_note", "complete", "fail"):
+        setattr(ws, m, AsyncMock())
+    return ws
+
+
+@pytest.mark.asyncio
+async def test_controller_execute_rejects_tampered_delivery(origin):
+    """A stub harness delivers a broken impl + weakened test (the tamper
+    scenario) through the REAL Controller.execute(); execute() must return
+    success=False with the tests-were-red gate failing — the crack is closed
+    through the assembled controller path, not just the gate in isolation."""
+    origin_path, root = origin
+    task_id = "assembly"
+    branch = deliverable_branch(task_id)
+
+    ws = _mock_ws()
+    ws.get_task_repo_info.return_value = RepoInfo(url=str(origin_path), branch=BASE)
+    ws.get_task_context.return_value = {
+        "task": {"id": task_id, "title": "prime", "spec": "s"}, "notes": []}
+
+    cfg = AgentConfig(agent_id="exec", agent_role="executor",
+                      sessions_dir=str(root / "sessions"),
+                      heartbeat_interval=3600)  # never fires during the test
+    controller = Controller(ws, cfg)
+    controller._agent_info = AgentInfo(id="a", token="t")
+
+    async def fake_clone(repo, wd):
+        wd.parent.mkdir(parents=True, exist_ok=True)
+        _git(root, "clone", str(origin_path), str(wd))
+        _git(wd, "config", "user.email", "t@t")
+        _git(wd, "config", "user.name", "t")
+
+    async def fake_invoke(task, repo, wd, prompt):
+        # Behave like the harness: branch, write the tamper payload, push.
+        _git(wd, "checkout", "-b", branch)
+        (wd / "prime.py").write_text(PRIME_BROKEN)
+        (wd / "test_prime.py").write_text(TEST_WEAKENED)
+        _git(wd, "add", "-A")
+        _git(wd, "commit", "-m", "deliver")
+        _git(wd, "push", "origin", branch)
+        return ExecutionResult(success=True, session_id="s", completion_report="done",
+                               cost_usd=0.0, num_turns=1, gate_results=[])
+
+    controller._invoker._ensure_repo_cloned = fake_clone
+    controller._invoker.invoke = fake_invoke
+
+    result = await controller.execute(_task(task_id))
+
+    assert result.success is False
+    assert "tests-were-red" in [g.name for g in result.gate_results if not g.passed]
