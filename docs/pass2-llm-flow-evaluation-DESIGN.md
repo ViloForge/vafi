@@ -52,10 +52,10 @@ Per `agentic-pipeline-ARCHITECTURE.md` §4 responsibility table, last row: execu
 - **cxdb** conversation DAG: the judge's full reasoning per session — `cxdb_list_sessions`, `cxdb_get_turns`, `cxdb_session_breadcrumbs`.
 
 **What Phase 1 actually needs (minimal):**
-- **(a) A pull/filter affordance** to surface *judge* sessions for review (filter cxdb/vfobs to the judge actor + the task's verdict). Thin wrapper over existing queries — *O1: confirm the judge actor/role is cleanly filterable post-R2/R4.*
-- **(b) An adjudication record** — a durable, append-only place to write "judge verdict on task T was right/wrong, because …", linkable to the methodology patch it drove. Candidate: a versioned `corpus/adjudications/` in-repo, or kb. *O2: where this lives.*
-- **(c) A light protocol/SOP** for running the loop (cadence, what to sample, severity tagging) — itself harvested into a methodology file.
-- **No new prod-path code.** The judge keeps running as-is; we observe it.
+- **(a) A pull/filter affordance** to surface *judge* sessions — **DONE (P2-1, vafi#30 merged 2026-05-22).** O1 resolved: the invoker labelled cxdb sessions only `task:<id>`, so judge vs executor sessions were indistinguishable; fixed by adding `--label role:<agent_role>` (both claude+pi cxtx paths) and a `role` filter on `cxdb_list_sessions`. **Forward-looking caveat (verified against real cxdb data 2026-05-22):** pre-#30 sessions carry only `cxtx`/harness/`interactive`/`task:` labels — no role — and a task often has several same-harness sessions, so the judge cannot be isolated historically. The loop evaluates tasks judged **after** the #30 deploy.
+- **(b) An adjudication record** — **DONE (P2-2): O2 resolved → `vtf-methodologies/judge/adjudications/<task-id>.md`** (one file per task, format in `judge/adjudications/TEMPLATE.md`). Co-located with `judge/*.md` so the empirical case sits next to the SOP it patches (lab-notebook→SOP). Fields grounded in real cxdb context + vfobs verdict data.
+- **(c) A light protocol/SOP** — **DONE (P2-2): `vtf-methodologies/judge/EVALUATION-LOOP.md`** (principle, prerequisites, the 5-step loop, sampling policy, miss-mode taxonomy, Phase-2 graduation bar).
+- **No new prod-path code** beyond the added session label (P2-1). The judge keeps running as-is; we observe it.
 
 **Definition of done for Phase 1:** the loop runs at least once end-to-end on real judge sessions, produces ≥1 adjudicated miss, and that miss lands as a `vtf-methodologies/judge/*` patch — proving the empirical→harvest path works for the judge dimension (mirrors how R5/R6 dogfooded their experiments).
 
@@ -84,18 +84,19 @@ Executor is strong (13/13), so lower priority and a **separate DESIGN**. It foll
 
 ## 8. Open questions
 
-- **O1** — is the judge actor/role cleanly filterable in cxdb/vfobs post-R2 (fleet service principal) / R4 (tags)? Needed for the Phase-1 pull affordance.
-- **O2** — adjudication record home: versioned `corpus/adjudications/` in-repo vs kb vs vtf notes. Wants: durable, append-only, linkable to methodology commits, reviewable.
-- **O3** — sampling cadence/policy for the retrospective loop (all judge sessions? a sample? all `changes_requested`? all `done`-via-approve?).
-- **O4** — when does a mode graduate from Phase 1 (manual) to Phase 2 (regression-locked)? Define the "recurs often enough" trigger.
-- **O5** — executor rubric: share substrate with the judge loop or fully split (lean split).
+- **O1 — RESOLVED (P2-1, vafi#30).** Judge sessions filterable via the new `role:judge` cxdb label + `cxdb_list_sessions(role=...)`. Forward-looking only (pre-#30 sessions lack the label).
+- **O2 — RESOLVED (P2-2).** Adjudication record home = `vtf-methodologies/judge/adjudications/<task-id>.md` (co-located with `judge/*.md`; lab-notebook→SOP).
+- **O3 — PROVISIONALLY SET (P2-2 SOP v0.1):** all `changes_requested` + all `approved→done` with external-artifact ACs + a random sample of remaining approvals. Tune as the corpus reveals where misses concentrate.
+- **O4 — PROVISIONALLY SET (P2-2 SOP v0.1):** a miss-mode graduates to Phase 2 at ≥3 independent corpus occurrences (clear-cut + machine-statable).
+- **O5** — executor rubric: share substrate with the judge loop or fully split (lean split). *Open.*
 
 ## 9. Sequencing
 
-1. **P2-1 (Phase 1 bootstrap)** — the pull/filter affordance (a) over cxdb/vfobs + the adjudication-record format (b) + the loop SOP (c). Resolve O1/O2.
-2. **P2-2** — run the loop on a batch of real judge sessions; produce the first adjudicated corpus + ≥1 harvested judge-methodology patch (Phase-1 DoD).
-3. **P2-3** — only if a clear-cut mode recurs: write the Phase-2 regression-lock DESIGN for *that* mode.
-4. Executor rubric → its own DESIGN.
+1. **P2-1 (pull/filter affordance) — DONE (vafi#30 merged 2026-05-22).** `role:judge` label + `cxdb_list_sessions(role=...)`. O1 resolved.
+2. **P2-2 (adjudication-record format + loop SOP) — DONE (2026-05-22).** `vtf-methodologies/judge/EVALUATION-LOOP.md` + `judge/adjudications/TEMPLATE.md`. O2/O3/O4 set.
+3. **P2-3 (Phase-1 DoD — the first real run)** — **gated on the #30 deploy**: deploy vafi to vafi-dev so judge sessions carry `role:judge`, run a judged task, then run the loop once end-to-end → first adjudicated record → ≥1 harvested `judge/*.md` patch (or a clean "judge correct" record if no miss). Mirrors how R5/R6 dogfooded their experiments.
+4. **P2-4** — only if a clear-cut mode recurs (≥3): write the Phase-2 regression-lock DESIGN for *that* mode.
+5. Executor rubric → its own DESIGN.
 
 Each slice: design-first → north-star TDD (for any code) → harvest into methodology. No slice is patched.
 
