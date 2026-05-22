@@ -16,7 +16,7 @@ from cxdb.client import CxdbClient
 from cxdb.extractor import extract_structured
 from cxdb.parser import extract_tool_events, parse_turns
 
-from .formatters import apply_filters, format_breadcrumbs, format_turn
+from .formatters import apply_filters, filter_sessions, format_breadcrumbs, format_turn
 
 logger = logging.getLogger("cxdb_mcp")
 
@@ -125,17 +125,18 @@ async def cxdb_get_turns(
 @mcp.tool()
 async def cxdb_list_sessions(
     task_id: str = "",
+    role: str = "",
     limit: int = 20,
 ) -> str:
-    """List recent cxdb sessions, optionally filtered by task ID.
+    """List recent cxdb sessions, optionally filtered by task ID and/or role.
 
+    ``role`` selects sessions by the agent role label (e.g. "judge" or
+    "executor") — the retrospective judge-evaluation loop uses
+    ``role="judge"`` (optionally with ``task_id``) to pull judge sessions.
     Returns session metadata: context_id, title, turn count, creation time.
     """
     contexts = await _client.list_contexts(limit=limit)
-
-    if task_id:
-        label = f"task:{task_id}"
-        contexts = [c for c in contexts if label in c.get("labels", [])]
+    contexts = filter_sessions(contexts, task_id=task_id or None, role=role or None)
 
     if not contexts:
         return "No sessions found."

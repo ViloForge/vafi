@@ -81,6 +81,29 @@ def format_turn(
     }
 
 
+def filter_sessions(
+    contexts: list[dict],
+    task_id: str | None = None,
+    role: str | None = None,
+) -> list[dict]:
+    """Filter cxdb session contexts by their ``task:`` / ``role:`` labels.
+
+    Sessions are labelled by the controller invoker; the retrospective
+    judge-evaluation loop (P2-1) uses this to pull e.g. the judge session
+    for a given task. Filters are conjunctive; a context whose ``labels``
+    do not contain a required label (including a context missing the key
+    entirely) is excluded.
+    """
+    result = contexts
+    if task_id:
+        label = f"task:{task_id}"
+        result = [c for c in result if label in c.get("labels", [])]
+    if role:
+        label = f"role:{role}"
+        result = [c for c in result if label in c.get("labels", [])]
+    return result
+
+
 def apply_filters(
     turns: list[ParsedTurn],
     tool_name: str | None = None,
