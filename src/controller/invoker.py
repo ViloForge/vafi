@@ -276,6 +276,7 @@ class HarnessInvoker:
             return [
                 "cxtx", "--url", self.config.cxdb_url,
                 "--label", f"task:{task_id}",
+                "--label", f"role:{self.config.agent_role}",
                 "claude", "--",
             ] + claude_args
         return ["claude"] + claude_args
@@ -298,6 +299,7 @@ class HarnessInvoker:
             return [
                 "cxtx", "--url", self.config.cxdb_url,
                 "--label", f"task:{task_id}",
+                "--label", f"role:{self.config.agent_role}",
                 "pi", "--",
             ] + pi_args
         return ["pi"] + pi_args

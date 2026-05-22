@@ -396,8 +396,10 @@ class TestHarnessInvoker:
             assert harness_args[2] == "http://cxdb-server:9010"
             assert harness_args[3] == "--label"
             assert harness_args[4] == "task:test-task-123"
-            assert harness_args[5] == "claude"
-            assert harness_args[6] == "--"
+            assert harness_args[5] == "--label"
+            assert harness_args[6] == "role:executor"
+            assert harness_args[7] == "claude"
+            assert harness_args[8] == "--"
             assert "-p" in harness_args
             assert "--output-format" in harness_args
 
@@ -520,9 +522,71 @@ class TestHarnessInvoker:
             assert harness_args[2] == "http://cxdb:9010"
             assert harness_args[3] == "--label"
             assert harness_args[4] == "task:test-task-123"
-            assert harness_args[5] == "pi"
-            assert harness_args[6] == "--"
+            # role label follows the task label (P2-1: judge-session pullability)
+            assert harness_args[5] == "--label"
+            assert harness_args[6] == "role:executor"
+            assert harness_args[7] == "pi"
+            assert harness_args[8] == "--"
             assert "-p" in harness_args
+
+    @pytest.mark.asyncio
+    async def test_cxtx_includes_role_label_executor(self, sample_task, sample_repo, temp_workdir):
+        """P2-1: cxtx is labelled with the agent role so the retrospective
+        judge-evaluation loop can pull judge sessions specifically. Executor."""
+        config = AgentConfig(
+            agent_id="test-role-exec",
+            task_timeout=30,
+            max_turns=10,
+            sessions_dir="/tmp/test-sessions",
+            agent_role="executor",
+            cxdb_url="http://cxdb:9010",
+        )
+        invoker = HarnessInvoker(config)
+        with patch('controller.invoker.subprocess.run') as mock_git, \
+             patch('controller.invoker.asyncio.create_subprocess_exec') as mock_subprocess:
+            mock_git.return_value = Mock(returncode=0, stderr="", stdout="")
+            mock_process = Mock()
+            mock_process.returncode = 0
+            async def mock_communicate():
+                return ('{"result": "test", "is_error": false}', "")
+            mock_process.communicate = mock_communicate
+            mock_subprocess.return_value = mock_process
+
+            await invoker.invoke(sample_task, sample_repo, temp_workdir, "test prompt")
+            harness_args = list(mock_subprocess.call_args[0])
+            assert "role:executor" in harness_args
+            ri = harness_args.index("role:executor")
+            assert harness_args[ri - 1] == "--label"
+            assert "task:test-task-123" in harness_args
+            # labels precede the "--" separator (and thus the harness binary)
+            assert harness_args.index("--") > ri
+
+    @pytest.mark.asyncio
+    async def test_cxtx_includes_role_label_judge(self, sample_task, sample_repo, temp_workdir):
+        """P2-1: judge sessions carry role:judge so they are filterable."""
+        config = AgentConfig(
+            agent_id="test-role-judge",
+            task_timeout=30,
+            max_turns=10,
+            sessions_dir="/tmp/test-sessions",
+            agent_role="judge",
+            cxdb_url="http://cxdb:9010",
+        )
+        invoker = HarnessInvoker(config)
+        with patch('controller.invoker.subprocess.run') as mock_git, \
+             patch('controller.invoker.asyncio.create_subprocess_exec') as mock_subprocess:
+            mock_git.return_value = Mock(returncode=0, stderr="", stdout="")
+            mock_process = Mock()
+            mock_process.returncode = 0
+            async def mock_communicate():
+                return ('{"result": "test", "is_error": false}', "")
+            mock_process.communicate = mock_communicate
+            mock_subprocess.return_value = mock_process
+
+            await invoker.invoke(sample_task, sample_repo, temp_workdir, "test prompt")
+            harness_args = list(mock_subprocess.call_args[0])
+            assert "role:judge" in harness_args
+            assert harness_args[harness_args.index("role:judge") - 1] == "--label"
 
     def test_parse_pi_output_success(self, test_config):
         """Test Pi JSONL output parsing with full agent_end event."""
