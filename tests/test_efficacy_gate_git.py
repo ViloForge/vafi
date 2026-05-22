@@ -106,13 +106,11 @@ async def test_broken_impl_real_test_fails(origin):
                              {"prime.py": PRIME_BROKEN, "test_prime.py": TEST_REAL}) is False
 
 
-@pytest.mark.xfail(reason="ViloForge/vafi#32: tests-were-red efficacy gate not yet "
-                          "implemented (docs/held-out-tamper-proof-gate-DESIGN.md slice 1)",
-                   strict=True)
 @pytest.mark.asyncio
 async def test_broken_impl_weakened_test_must_fail(origin):
-    """THE CRACK: broken impl + executor-weakened test ⇒ MUST FAIL.
-    Today it PASSES (no efficacy gate). The slice-1 efficacy gate flips it."""
+    """THE CRACK (ViloForge/vafi#32), now closed by the tests-were-red efficacy
+    gate: broken impl + executor-weakened test ⇒ gates FAIL. The weakened test
+    passes WITHOUT an implementation, so the efficacy gate rejects it."""
     origin_path, tmp_path = origin
     assert await _gates_pass(origin_path, tmp_path, "tamper",
                              {"prime.py": PRIME_BROKEN, "test_prime.py": TEST_WEAKENED}) is False

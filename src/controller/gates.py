@@ -47,6 +47,41 @@ def _delivery_gate_command(task_id: str, base_branch: str) -> str:
     )
 
 
+def _efficacy_gate_command(task_id: str, base_branch: str, test_command: str) -> str:
+    """The 'tests-were-red' check (docs/held-out-tamper-proof-gate-DESIGN.md slice 1).
+
+    A genuine TDD test is RED before the implementation exists; a vacuous or
+    executor-weakened test never was. So reconstruct ``base + ONLY the
+    deliverable's test files`` (the implementation absent) and run the
+    acceptance command: it MUST fail. If it PASSES without the implementation,
+    the tests do not depend on it ⇒ vacuous/tampered ⇒ reject. This closes the
+    proven L1 gate-tamper crack (ViloForge/vafi#32) deterministically — the
+    executor cannot ship broken code green by weakening its own test.
+
+    Refs are fetched from origin (not the possibly-mutated workdir — JQ1=yes).
+    Test files are identified by Python test-naming convention; a deliverable
+    that changes no test files is skipped (delivery + test_command still gate).
+    """
+    branch = deliverable_branch(task_id)
+    return rf"""
+bbase=refs/efficacy/base; bdeliv=refs/efficacy/deliv
+if ! git fetch -q origin "+{base_branch}:$bbase" "+{branch}:$bdeliv"; then echo "efficacy: cannot fetch refs from origin"; exit 1; fi
+recon=$(mktemp -d)
+trap 'git worktree remove --force "$recon" 2>/dev/null; git update-ref -d "$bbase" 2>/dev/null; git update-ref -d "$bdeliv" 2>/dev/null' EXIT
+if ! git worktree add -q --detach "$recon" "$bbase"; then echo "efficacy: cannot materialise base tree"; exit 1; fi
+tests=$(git -C "$recon" diff --name-only "$bbase".."$bdeliv" | grep -E '(^|/)test_[^/]*\.py$|(^|/)[^/]*_test\.py$|(^|/)tests?/' || true)
+if [ -z "$tests" ]; then echo "efficacy: deliverable changed no test files; nothing to witness - skipping"; exit 0; fi
+if ! git -C "$recon" checkout -q "$bdeliv" -- $tests; then echo "efficacy: cannot overlay deliverable test files onto base"; exit 1; fi
+echo "efficacy: running acceptance command against base+tests with NO implementation"
+if ( cd "$recon" && {test_command} ) >/dev/null 2>&1; then
+  echo "efficacy FAIL: acceptance tests PASS without the implementation (vacuous or tampered tests) [files: $tests]"
+  exit 1
+fi
+echo "efficacy OK: acceptance tests fail without the implementation (were genuinely red) [files: $tests]"
+exit 0
+"""
+
+
 @dataclass
 class GateConfig:
     """Configuration for a single verification gate."""
@@ -206,5 +241,18 @@ class GateRunner:
         ]
         # Reuse the existing optional test_command gate, ordered AFTER the
         # delivery gate (delivery is the floor; test_command refines it).
-        gates.extend(cls.from_task_command(task.test_command).gates)
+        tc_gates = cls.from_task_command(task.test_command).gates
+        gates.extend(tc_gates)
+        # The 'tests-were-red' efficacy gate (ViloForge/vafi#32): only meaningful
+        # when there IS a test_command to witness. Ordered last — delivery and
+        # test_command are the floor; efficacy proves the test_command isn't
+        # vacuous/tampered. Same exit-code machinery (Open/Closed).
+        if tc_gates:
+            gates.append(GateConfig(
+                name="tests-were-red",
+                command=_efficacy_gate_command(
+                    task.id, repo_info.branch, task.test_command["command"]
+                ),
+                required=True,
+            ))
         return cls(gates)
