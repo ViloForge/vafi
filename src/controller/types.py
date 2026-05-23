@@ -81,3 +81,9 @@ class ExecutionResult:
     cost_usd: float
     num_turns: int
     gate_results: list[GateResult]
+    # vafi#39: set when the harness reported success=False but the gates
+    # passed (delivery is real on origin). The controller surfaces this
+    # as a task note before accepting the delivery, so adjudicators can
+    # see the exit-code anomaly even though the work was accepted. None
+    # for the ordinary harness-OK or honest-failure paths.
+    harness_anomaly: str | None = None
