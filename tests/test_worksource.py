@@ -274,3 +274,109 @@ class TestVtfWorkSource:
         })
         await self.work_source.set_agent_offline("agent_123")
         self.mock_client.agents.update_status.assert_called_once_with("agent_123", status="offline")
+
+    # ---- D2: complete() resilience (kb gotcha XsPemtnm) ----
+    # complete() posts up to three notes (completion report, session_id,
+    # execution metadata) and then calls tasks.complete(). If any add_note
+    # raises (e.g. vtf 400 on blank Note.text from a max_turns claude run),
+    # the chain previously aborted BEFORE tasks.complete() — leaving a
+    # gates-passed delivery in `doing` and the controller treated it as a
+    # fatal failure (→ needs_attention). A successful delivery whose
+    # gates passed must reach pending_completion_review, period.
+
+    async def test_complete_continues_when_completion_note_fails(self):
+        """First add_note (completion report) raises → metadata note + tasks.complete still run."""
+        execution_result = ExecutionResult(
+            success=True, session_id="sess-xyz",
+            completion_report="report text",
+            cost_usd=0.01, num_turns=2, gate_results=[],
+        )
+        # Make ONLY the completion-report note (first call) fail.
+        call_count = {"n": 0}
+        async def add_note_side_effect(task_id, text):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                raise Exception("vtf 400: text must not be blank")
+        self.mock_client.tasks.add_note.side_effect = add_note_side_effect
+
+        await self.work_source.complete("task_123", execution_result)
+
+        # All three add_note attempts were made (none short-circuited).
+        assert self.mock_client.tasks.add_note.call_count == 3
+        # The terminal complete MUST still have been called.
+        self.mock_client.tasks.complete.assert_called_once_with("task_123")
+
+    async def test_complete_continues_when_session_id_note_fails(self):
+        """Middle add_note (session_id) failing must not abort completion."""
+        execution_result = ExecutionResult(
+            success=True, session_id="sess-xyz",
+            completion_report="ok",
+            cost_usd=0.01, num_turns=2, gate_results=[],
+        )
+        call_count = {"n": 0}
+        async def add_note_side_effect(task_id, text):
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                raise Exception("vtf 500")
+        self.mock_client.tasks.add_note.side_effect = add_note_side_effect
+
+        await self.work_source.complete("task_123", execution_result)
+
+        assert self.mock_client.tasks.add_note.call_count == 3
+        self.mock_client.tasks.complete.assert_called_once_with("task_123")
+
+    async def test_complete_continues_when_metadata_note_fails(self):
+        """Last add_note (metadata) failing must not abort completion."""
+        execution_result = ExecutionResult(
+            success=True, session_id="sess-xyz",
+            completion_report="ok",
+            cost_usd=0.01, num_turns=2, gate_results=[],
+        )
+        call_count = {"n": 0}
+        async def add_note_side_effect(task_id, text):
+            call_count["n"] += 1
+            if call_count["n"] == 3:
+                raise Exception("vtf 500")
+        self.mock_client.tasks.add_note.side_effect = add_note_side_effect
+
+        await self.work_source.complete("task_123", execution_result)
+
+        assert self.mock_client.tasks.add_note.call_count == 3
+        self.mock_client.tasks.complete.assert_called_once_with("task_123")
+
+    async def test_complete_continues_when_all_notes_fail(self):
+        """Even if EVERY note fails, the terminal complete() must run."""
+        execution_result = ExecutionResult(
+            success=True, session_id="sess-xyz",
+            completion_report="ok",
+            cost_usd=0.01, num_turns=2, gate_results=[],
+        )
+        async def add_note_side_effect(task_id, text):
+            raise Exception("vtf down")
+        self.mock_client.tasks.add_note.side_effect = add_note_side_effect
+
+        await self.work_source.complete("task_123", execution_result)
+
+        assert self.mock_client.tasks.add_note.call_count == 3
+        self.mock_client.tasks.complete.assert_called_once_with("task_123")
+
+    async def test_complete_guards_blank_completion_report_text(self):
+        """Belt-and-braces with D1: if completion_report somehow IS blank,
+        complete() must substitute a non-empty placeholder so the note
+        post doesn't 400. (D1 fixes this at source; D2 defends in depth.)"""
+        execution_result = ExecutionResult(
+            success=True, session_id="sess-xyz",
+            completion_report="",  # the bug payload
+            cost_usd=0.01, num_turns=47, gate_results=[],
+        )
+        captured_texts = []
+        async def add_note_capture(task_id, text):
+            captured_texts.append(text)
+        self.mock_client.tasks.add_note.side_effect = add_note_capture
+
+        await self.work_source.complete("task_123", execution_result)
+
+        # First call is the completion-report note — its text must be non-empty.
+        assert captured_texts[0] != "", \
+            "complete() must substitute a placeholder for blank completion_report text"
+        self.mock_client.tasks.complete.assert_called_once_with("task_123")

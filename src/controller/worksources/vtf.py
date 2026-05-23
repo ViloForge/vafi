@@ -4,10 +4,13 @@ This module implements the WorkSource protocol using the vtf Python SDK.
 It wraps AsyncVtfClient and contains vtf-specific logic like priority ordering
 (rework before new work), review parsing, and session ID extraction.
 """
+import logging
 from typing import Any
 
 from vtf_sdk.async_client import AsyncVtfClient
 from vtf_sdk.entities import Task as SdkTask
+
+logger = logging.getLogger(__name__)
 
 from ..types import (
     AgentInfo,
@@ -93,12 +96,23 @@ class VtfWorkSource:
         await self._client.agents.update_status(agent_id, status="offline")
 
     async def complete(self, task_id: str, result: ExecutionResult) -> None:
-        """Mark a task as completed with execution results."""
-        await self._client.tasks.add_note(task_id, text=result.completion_report)
+        """Mark a task as completed with execution results.
+
+        Note-post failures are best-effort and MUST NOT abort the terminal
+        tasks.complete() — a gates-passed delivery must reach
+        pending_completion_review even if audit notes can't be posted.
+        Without this, a blank completion_report (claude max_turns) → vtf 400
+        on add_note → exception bubbled → controller treated the whole
+        completion as fatal and routed to needs_attention. kb gotcha
+        XsPemtnm. D1 (invoker.py) ensures completion_report is never blank
+        at the source; this method defends in depth.
+        """
+        report_text = result.completion_report or "Task completed"
+        await self._safe_add_note(task_id, report_text)
 
         if result.session_id:
-            await self._client.tasks.add_note(
-                task_id, text=f"vafi:session_id={result.session_id}",
+            await self._safe_add_note(
+                task_id, f"vafi:session_id={result.session_id}",
             )
 
         metadata_text = (
@@ -107,8 +121,19 @@ class VtfWorkSource:
             f"num_turns: {result.num_turns}\n"
             f"gates: {len(result.gate_results)} executed"
         )
-        await self._client.tasks.add_note(task_id, text=metadata_text)
+        await self._safe_add_note(task_id, metadata_text)
         await self._client.tasks.complete(task_id)
+
+    async def _safe_add_note(self, task_id: str, text: str) -> None:
+        """Best-effort note post — log + swallow exceptions so the caller's
+        terminal action (e.g. tasks.complete) is not aborted by an audit-only
+        side-channel failure. See `complete` for the rationale."""
+        try:
+            await self._client.tasks.add_note(task_id, text=text)
+        except Exception as e:
+            logger.warning(
+                "add_note failed for task %s (continuing): %s", task_id, e,
+            )
 
     async def fail(self, task_id: str, reason: str) -> None:
         """Mark a task as failed."""
