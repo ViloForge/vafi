@@ -84,6 +84,58 @@ class TestBuildContext:
         result = build_context(task_data, notes=[], reviews=reviews, role="judge")
         assert "re-review" in result.lower() or "previous rejection" in result.lower()
 
+    def test_judge_instruction_forbids_writes_to_origin(self):
+        """vafi#37: judges are verifiers, not authors. The judge prompt must
+        explicitly forbid every git write operation (push, commit, tag,
+        branch, gh pr create) so a prompt-following judge cannot silently
+        fabricate or rewrite the delivery — the load-bearing case where a
+        write-capable judge becomes a ghost-completion enabler.
+        """
+        task_data = {"id": "t1", "title": "T", "spec": "", "test_command": {}}
+        result = build_context(task_data, notes=[], reviews=[], role="judge")
+        lowered = result.lower()
+        # Each forbidden write op must be explicitly named so a literal-
+        # minded prompt-follower cannot infer "git push" wasn't on the list.
+        for forbidden in [
+            "git push",
+            "git commit",
+            "git tag",
+            "git branch",
+            "gh pr create",
+        ]:
+            assert forbidden in lowered, (
+                f"judge instruction missing explicit deny of {forbidden!r}"
+            )
+        # And a positive framing of the read-only intent.
+        assert "verification" in lowered or "read-only" in lowered
+
+    def test_judge_instruction_allows_read_only_verification_ops(self):
+        """The deny-list is not enough on its own — the prompt also needs
+        an allow-list naming the read-only operations that ARE expected,
+        so the judge knows what tools it can use to do its job.
+        """
+        task_data = {"id": "t1", "title": "T", "spec": "", "test_command": {}}
+        result = build_context(task_data, notes=[], reviews=[], role="judge")
+        lowered = result.lower()
+        for allowed in ["git log", "git diff", "git ls-remote"]:
+            assert allowed in lowered, (
+                f"judge instruction missing allow-list entry {allowed!r}"
+            )
+
+    def test_executor_instruction_does_not_contain_judge_deny_list(self):
+        """Regression guard: the executor's instruction must NOT carry the
+        judge's deny-list — the executor's whole purpose is to push the
+        deliverable branch.
+        """
+        task_data = {"id": "t1", "title": "T", "spec": "", "test_command": {}}
+        result = build_context(task_data, notes=[], reviews=[], role="executor")
+        lowered = result.lower()
+        # The executor instruction obviously mentions "push" (deliverable
+        # contract). It must NOT carry a 'never git push' / 'forbidden'
+        # framing aimed at the judge.
+        assert "never git push" not in lowered
+        assert "forbidden" not in lowered or "deliverable" in lowered
+
 
 class TestWriteContext:
     def test_creates_vafi_directory(self, tmp_path):
