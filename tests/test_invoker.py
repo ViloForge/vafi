@@ -706,6 +706,43 @@ class TestHarnessInvoker:
             assert max_turns_idx > separator_idx
             assert harness_args[max_turns_idx + 1] == "25"
 
+    # ---- D1: empty-string `result` guard (kb gotcha XsPemtnm) ----
+    # Claude's harness can return {"result": ""} (e.g. max_turns hit before
+    # the agent emits a final text turn). `.get("result", "Task completed")`
+    # returns the empty string, not the default — that blank string is then
+    # posted as the completion note via VtfWorkSource.complete(), and vtf
+    # rejects empty Note.text with 400, aborting the gates-passed delivery.
+    # Use `or` so falsy values (empty string, None) also fall back.
+
+    def test_parse_claude_output_empty_result_success_falls_back(self, test_config):
+        invoker = HarnessInvoker(test_config)
+        stdout = json.dumps({
+            "result": "",
+            "is_error": False,
+            "session_id": "sess-empty-ok",
+            "total_cost_usd": 0.0,
+            "num_turns": 47,
+        })
+        result = invoker._parse_claude_output(stdout, "task-empty-ok")
+        assert result.success is True
+        assert result.session_id == "sess-empty-ok"
+        # Must NOT be the empty string — vtf rejects blank Note.text with 400
+        assert result.completion_report == "Task completed"
+
+    def test_parse_claude_output_empty_result_error_falls_back(self, test_config):
+        invoker = HarnessInvoker(test_config)
+        stdout = json.dumps({
+            "result": "",
+            "is_error": True,
+            "session_id": "sess-empty-err",
+            "total_cost_usd": 0.0,
+            "num_turns": 1,
+        })
+        result = invoker._parse_claude_output(stdout, "task-empty-err")
+        assert result.success is False
+        assert result.completion_report == "Harness reported an error"
+
+
 def _git(cwd, *args):
     return subprocess.run(["git", *args], cwd=str(cwd), check=True,
                            capture_output=True, text=True).stdout.strip()

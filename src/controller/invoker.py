@@ -424,7 +424,10 @@ class HarnessInvoker:
             return ExecutionResult(
                 success=False,
                 session_id=output_data.get("session_id"),
-                completion_report=output_data.get("result", "Harness reported an error"),
+                # `or` (not dict default) — claude can return {"result": ""}
+                # (e.g. max_turns hit before final text turn); blank Note.text
+                # 400s on vtf and aborts the completion path. kb XsPemtnm.
+                completion_report=output_data.get("result") or "Harness reported an error",
                 cost_usd=output_data.get("total_cost_usd", 0.0),
                 num_turns=output_data.get("num_turns", 0),
                 gate_results=[]
@@ -434,7 +437,7 @@ class HarnessInvoker:
         return ExecutionResult(
             success=True,
             session_id=output_data.get("session_id"),
-            completion_report=output_data.get("result", "Task completed"),
+            completion_report=output_data.get("result") or "Task completed",
             cost_usd=output_data.get("total_cost_usd", 0.0),
             num_turns=output_data.get("num_turns", 0),
             gate_results=[]
