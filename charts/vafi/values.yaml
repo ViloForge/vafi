@@ -323,3 +323,13 @@ secrets:
 
 sshSecret:
   name: github-ssh
+
+# Optional belt-and-braces defense for vafi#37 (judge role-boundary leak).
+# The judge pod is a verifier, not an author — its prompt forbids any git
+# write operation (see context.py role='judge' instruction). If you also
+# want the *capability* removed, provision a read-only deploy key on each
+# verifiable repo, store it in a separate Kubernetes secret, and set
+# `judgeSshSecret.name` here. When empty (default), the judge mounts the
+# same `sshSecret.name` as the executors — backwards-compatible.
+judgeSshSecret:
+  name: ""

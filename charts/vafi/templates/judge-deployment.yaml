@@ -86,7 +86,7 @@ spec:
             claimName: {{ include "vafi.fullname" . }}-sessions
         - name: ssh-secret
           secret:
-            secretName: {{ .Values.sshSecret.name }}
+            secretName: {{ include "vafi.judgeSshSecretName" . }}
         - name: ssh-ready
           emptyDir: {}
       restartPolicy: Always

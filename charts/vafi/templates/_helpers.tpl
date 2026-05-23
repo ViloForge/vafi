@@ -63,6 +63,21 @@ CXDB service name.
 {{- end }}
 
 {{/*
+SSH secret name for the judge pod (vafi#37 capability slice). Defaults to
+the shared sshSecret.name so existing deployments are unaffected. When
+judgeSshSecret.name is set, the judge mounts that secret instead — the
+operator's hook for landing a read-only deploy key on the judge pod
+without touching the executor's credentials.
+*/}}
+{{- define "vafi.judgeSshSecretName" -}}
+{{- if .Values.judgeSshSecret.name -}}
+{{- .Values.judgeSshSecret.name -}}
+{{- else -}}
+{{- .Values.sshSecret.name -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Bridge agent-pi image string. Accepts either the legacy single-string form
 ("repo:tag") or the preferred {repository, tag} map form. The map form is
 required for build pipelines that bump tags in isolation (e.g. git-tag-bump
