@@ -236,6 +236,21 @@ class Controller:
 
             # Report result
             if result.success:
+                # vafi#39: surface the harness exit-code anomaly on the
+                # task before accepting the delivery, so adjudicators see
+                # why we overrode the harness's verdict.
+                if result.harness_anomaly:
+                    try:
+                        await self.work_source.add_note(
+                            task.id,
+                            f"vafi:harness_exit_anomaly\n{result.harness_anomaly}",
+                            self._agent_info.id,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to post harness_exit_anomaly note for "
+                            f"task {task.id}: {e}"
+                        )
                 await self.work_source.complete(task.id, result)
                 logger.info(f"Completed task {task.id}")
             else:
@@ -498,13 +513,20 @@ class Controller:
                 turn_number=result.num_turns,
             )
 
-            # If harness failed, return without running gates
+            # vafi#39: always run gates, even on harness-reported failure.
+            # The gate is the load-bearing acceptance signal; the harness
+            # exit code is a hint. If the F7/F10 delivery gate verifies
+            # the branch on origin, the work is real regardless of what
+            # the harness exit code said. An honest failure (no push, no
+            # branch) is still caught: gates fail → success=False below.
+            # Same hardening direction as vafi#36 (D1+D2).
             if not result.success:
-                logger.info(f"Harness failed for task {task.id}, skipping gates")
-                return result
-
-            # Harness succeeded - run gates
-            logger.info(f"Harness succeeded for task {task.id}, running gates")
+                logger.warning(
+                    f"Harness reported failure for task {task.id}; "
+                    f"running gates anyway to check whether delivery is real"
+                )
+            else:
+                logger.info(f"Harness succeeded for task {task.id}, running gates")
             # F7/F10: always synthesize a required delivery gate (verifies
             # the deliverable was durably pushed to origin) + the optional
             # test_command gate. A no-test_command task is no longer a
@@ -522,6 +544,19 @@ class Controller:
                     all_required_gates_passed = False
                     logger.warning(f"Gate '{gate_result.name}' failed for task {task.id}")
 
+            # vafi#39: harness-failure-but-gates-pass → accept delivery and
+            # carry the anomaly forward so the poll layer can surface it on
+            # the task as a note.
+            harness_anomaly: str | None = None
+            if not result.success and all_required_gates_passed:
+                harness_anomaly = (
+                    f"harness reported success=False but gates passed; "
+                    f"completion_report={result.completion_report!r}"
+                )
+                logger.warning(
+                    f"Task {task.id}: {harness_anomaly} — accepting delivery"
+                )
+
             # Create final result with gate information
             final_result = ExecutionResult(
                 success=all_required_gates_passed,
@@ -529,7 +564,8 @@ class Controller:
                 completion_report=result.completion_report,
                 cost_usd=result.cost_usd,
                 num_turns=result.num_turns,
-                gate_results=gate_results
+                gate_results=gate_results,
+                harness_anomaly=harness_anomaly,
             )
 
             if final_result.success:

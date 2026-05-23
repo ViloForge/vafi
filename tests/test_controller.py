@@ -33,6 +33,8 @@ class MockWorkSource:
         self.submit = AsyncMock()
         self.list_submittable = AsyncMock()
         self.submit_review = AsyncMock()
+        self.get_task_context = AsyncMock()
+        self.add_note = AsyncMock()
 
 
 @pytest.fixture
@@ -414,4 +416,211 @@ class TestReworkCap:
         await controller._poll_and_execute()
 
         controller.execute.assert_called_once()
+        mock_work_source.fail.assert_not_called()
+
+
+class TestHarnessFailureWithGatesPass:
+    """vafi#39: harness exit_code != 0 with passing gates must accept the
+    delivery.
+
+    The harness exit code is a *hint*; the gate is the load-bearing
+    acceptance signal. If the F7/F10 delivery gate (and the optional
+    test_command gate) verify the branch on origin, the work is real
+    regardless of how the harness exited. Same hardening direction as
+    vafi#36 (D1+D2): the structured signal overrides the raw signal.
+    """
+
+    @pytest.mark.asyncio
+    async def test_execute_harness_failure_with_passing_gates_succeeds(
+        self, mock_work_source, test_config, sample_agent, sample_task,
+        tmp_path, monkeypatch,
+    ):
+        from controller.types import ExecutionResult, GateResult, RepoInfo
+        from controller import gates as gates_mod
+
+        test_config.sessions_dir = str(tmp_path)
+        mock_work_source.get_task_repo_info.return_value = RepoInfo(
+            url="x", branch="main"
+        )
+
+        controller = Controller(mock_work_source, test_config)
+        controller._agent_info = sample_agent
+        controller._write_task_context = AsyncMock()
+
+        async def _noop_clone(*a, **kw):
+            return None
+
+        async def _failing_invoke(*a, **kw):
+            return ExecutionResult(
+                success=False, session_id="sess-1",
+                completion_report="harness boom: exit_code=1",
+                cost_usd=0.0, num_turns=3, gate_results=[],
+            )
+
+        monkeypatch.setattr(
+            controller._invoker, "_ensure_repo_cloned", _noop_clone
+        )
+        monkeypatch.setattr(controller._invoker, "invoke", _failing_invoke)
+
+        passing = [GateResult(
+            name="delivery", command="...", exit_code=0,
+            stdout="deliverable verified on origin", passed=True,
+        )]
+
+        class _FakeRunner:
+            async def run_gates(self, workdir, task):
+                return passing
+
+        monkeypatch.setattr(
+            gates_mod.GateRunner, "from_task",
+            classmethod(lambda cls, t, r: _FakeRunner()),
+        )
+
+        result = await controller.execute(sample_task)
+
+        assert result.success is True
+        assert result.harness_anomaly is not None
+        assert "harness" in result.harness_anomaly.lower()
+        # The harness completion_report is preserved so adjudicators can
+        # still see what the harness said before the gates overrode it.
+        assert "exit_code=1" in result.harness_anomaly
+
+    @pytest.mark.asyncio
+    async def test_execute_harness_failure_with_failing_gates_fails(
+        self, mock_work_source, test_config, sample_agent, sample_task,
+        tmp_path, monkeypatch,
+    ):
+        """Honest-failure regression: harness reports failure AND gates fail
+        → success=False, no anomaly (the harness's verdict was correct)."""
+        from controller.types import ExecutionResult, GateResult, RepoInfo
+        from controller import gates as gates_mod
+
+        test_config.sessions_dir = str(tmp_path)
+        mock_work_source.get_task_repo_info.return_value = RepoInfo(
+            url="x", branch="main"
+        )
+
+        controller = Controller(mock_work_source, test_config)
+        controller._agent_info = sample_agent
+        controller._write_task_context = AsyncMock()
+
+        async def _noop_clone(*a, **kw):
+            return None
+
+        async def _failing_invoke(*a, **kw):
+            return ExecutionResult(
+                success=False, session_id="sess-2",
+                completion_report="harness died before push",
+                cost_usd=0.0, num_turns=1, gate_results=[],
+            )
+
+        monkeypatch.setattr(
+            controller._invoker, "_ensure_repo_cloned", _noop_clone
+        )
+        monkeypatch.setattr(controller._invoker, "invoke", _failing_invoke)
+
+        failing = [GateResult(
+            name="delivery", command="...", exit_code=1,
+            stdout="branch not found on origin", passed=False,
+        )]
+
+        class _FakeRunner:
+            async def run_gates(self, workdir, task):
+                return failing
+
+        monkeypatch.setattr(
+            gates_mod.GateRunner, "from_task",
+            classmethod(lambda cls, t, r: _FakeRunner()),
+        )
+
+        result = await controller.execute(sample_task)
+
+        assert result.success is False
+        assert result.harness_anomaly is None
+
+    @pytest.mark.asyncio
+    async def test_execute_harness_success_with_failing_gates_fails(
+        self, mock_work_source, test_config, sample_agent, sample_task,
+        tmp_path, monkeypatch,
+    ):
+        """Existing behavior preserved: harness OK, gates fail → success=False,
+        no anomaly (gates are the verdict)."""
+        from controller.types import ExecutionResult, GateResult, RepoInfo
+        from controller import gates as gates_mod
+
+        test_config.sessions_dir = str(tmp_path)
+        mock_work_source.get_task_repo_info.return_value = RepoInfo(
+            url="x", branch="main"
+        )
+
+        controller = Controller(mock_work_source, test_config)
+        controller._agent_info = sample_agent
+        controller._write_task_context = AsyncMock()
+
+        async def _noop_clone(*a, **kw):
+            return None
+
+        async def _ok_invoke(*a, **kw):
+            return ExecutionResult(
+                success=True, session_id="sess-3",
+                completion_report="all done",
+                cost_usd=0.0, num_turns=2, gate_results=[],
+            )
+
+        monkeypatch.setattr(
+            controller._invoker, "_ensure_repo_cloned", _noop_clone
+        )
+        monkeypatch.setattr(controller._invoker, "invoke", _ok_invoke)
+
+        failing = [GateResult(
+            name="test_command", command="pytest", exit_code=1,
+            stdout="2 failed", passed=False,
+        )]
+
+        class _FakeRunner:
+            async def run_gates(self, workdir, task):
+                return failing
+
+        monkeypatch.setattr(
+            gates_mod.GateRunner, "from_task",
+            classmethod(lambda cls, t, r: _FakeRunner()),
+        )
+
+        result = await controller.execute(sample_task)
+
+        assert result.success is False
+        assert result.harness_anomaly is None
+
+    @pytest.mark.asyncio
+    async def test_poll_posts_anomaly_note_then_completes(
+        self, mock_work_source, test_config, sample_agent, sample_task,
+    ):
+        """At the poll layer: when execute() returns success=True with a
+        harness_anomaly string, the controller posts a vafi:harness_exit_anomaly
+        note via add_note BEFORE calling complete(), so the anomaly is
+        permanently surfaced on the task even though the delivery is accepted.
+        """
+        from controller.types import ExecutionResult
+
+        mock_work_source.poll.return_value = sample_task
+        mock_work_source.claim.return_value = sample_task
+
+        controller = Controller(mock_work_source, test_config)
+        controller._agent_info = sample_agent
+        controller.execute = AsyncMock(return_value=ExecutionResult(
+            success=True, session_id="s", completion_report="ok",
+            cost_usd=0.0, num_turns=0, gate_results=[],
+            harness_anomaly="harness reported success=False but gates passed; "
+                            "completion_report='harness boom: exit_code=1'",
+        ))
+
+        await controller._poll_and_execute()
+
+        # Note posted with the anomaly tag + the agent as actor.
+        mock_work_source.add_note.assert_called_once()
+        note_args = mock_work_source.add_note.call_args
+        assert note_args[0][0] == sample_task.id
+        assert "vafi:harness_exit_anomaly" in note_args[0][1]
+        # Delivery accepted: complete (not fail).
+        mock_work_source.complete.assert_called_once()
         mock_work_source.fail.assert_not_called()
