@@ -127,6 +127,42 @@ def build_context(
         if has_rejection:
             lines.append("")
             lines.append("This is a **re-review** after rework. Check that the previous rejection issues are resolved.")
+        # vafi#37: scope the judge to verification-only operations. Judges
+        # are verifiers, not authors — a write-capable judge is one prompt-
+        # drift away from being a ghost-completion enabler (silently
+        # pushing a "fix", fabricating a missing delivery, racing the
+        # executor). The deny-list and allow-list are both enumerated
+        # explicitly so a literal-minded prompt-follower cannot infer that
+        # an unmentioned write op is permitted.
+        lines.append("")
+        lines.append("## Role boundary: verification only (read-only)")
+        lines.append("")
+        lines.append(
+            "You may run **only** read-only verification operations. You "
+            "are NEVER permitted to write to `origin` or to modify the "
+            "deliverable in any way — the executor is the sole author. "
+            "Even if you believe a small change would let the work pass, "
+            "DO NOT make it. Report your honest verdict instead and let "
+            "the rework loop handle it."
+        )
+        lines.append("")
+        lines.append("**Allowed (read-only):**")
+        lines.append(
+            "- `git log`, `git diff`, `git show`, `git ls-remote`, "
+            "`git cat-file`, `git rev-parse`, `git status`"
+        )
+        lines.append("- Reading files in the workdir")
+        lines.append("- Running the task's `test_command` to verify behavior")
+        lines.append("")
+        lines.append("**Forbidden — do not run these under any circumstances:**")
+        lines.append(
+            "- `git push` (any form, any remote)"
+        )
+        lines.append("- `git commit`, `git commit --amend`")
+        lines.append("- `git tag`, `git branch` (create/move/delete)")
+        lines.append("- `git reset`, `git rebase`, `git merge`, `git cherry-pick`")
+        lines.append("- `gh pr create`, `gh pr merge`, any `gh` write op")
+        lines.append("- Any other operation that writes to `origin` or alters refs")
     else:
         if has_rejection:
             lines.append("This is a **rework**. The previous implementation was rejected.")
