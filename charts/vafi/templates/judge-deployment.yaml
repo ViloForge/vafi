@@ -17,6 +17,7 @@ spec:
         {{- include "vafi.labels" . | nindent 8 }}
         {{- include "vafi.selectorLabels" (dict "root" . "component" "judge") | nindent 8 }}
     spec:
+      serviceAccountName: vtaskforge-judge
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

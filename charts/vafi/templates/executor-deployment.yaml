@@ -16,6 +16,7 @@ spec:
         {{- include "vafi.labels" . | nindent 8 }}
         {{- include "vafi.selectorLabels" (dict "root" . "component" "executor") | nindent 8 }}
     spec:
+      serviceAccountName: vtaskforge-executor
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
