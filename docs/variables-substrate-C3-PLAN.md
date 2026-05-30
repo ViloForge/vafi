@@ -168,12 +168,19 @@ PKs + `controller_id` from the task context and PATCH `Task.secrets_snapshot`.
    `invoke`, emit `audit_records` (best-effort via `HttpAuditEmitter`), PATCH
    `Task.secrets_snapshot`, and pipe stdout/stderr through `plan.redactor`.
 2. **`project_slug` source** — `TaskInfo.project_id` is the project **PK**
-   (`task.project.id`); the Vault path needs the **slug**. The vtaskforge
-   `ProjectSerializer` *does* expose `slug`, but the vafi-side `vtf-sdk-python`
-   `Project` entity does **not** parse it yet (same repo — `vtf-sdk-python/`).
-   Add `slug` to the SDK entity + carry `project_slug` on `TaskInfo`.
-3. **snapshot write path** — confirm the task-update endpoint/SDK accepts
-   `secrets_snapshot` (it's a writable `Task` JSONField).
+   (`task.project.id`). Grounded vs live vtf-dev: the task's nested `project` is
+   `{id, name}` only (no slug), but `GET /v2/projects/<id>` **does** return `slug`.
+   So the controller must *fetch the project* for the slug.
+   - **DONE:** `Project.slug` added to the SDK entity (commit `46f091f`),
+     grounded + forward-compat-defaulted.
+   - **TODO:** a worksource seam method `get_project_slug(project_id) -> str`
+     (vtf impl = `(await client.projects.get(pid)).slug`) — resolve lazily in
+     `execute` only when the task declares variables (keep it off the hot path).
+3. **snapshot write path** — **NOT yet grounded.** Confirm the task-update
+   endpoint/SDK accepts writing `secrets_snapshot` (a `Task` JSONField — but it
+   must be *writable* in the TaskSerializer, not read-only). Likely a second
+   worksource seam method `set_secrets_snapshot(task_id, snapshot)`. Verify the
+   serializer field before wiring.
 4. `AuditEmitter` wiring — vtf base URL + the controller's agent token from config.
 5. `/admin/probe` (vafi) + `vtf project var probe` (vtaskforge CLI).
 6. **L4** — needs the vafi feature image redeployed to vafi-dev + a test secret
