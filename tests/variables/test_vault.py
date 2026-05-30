@@ -1,7 +1,8 @@
 """L1 unit tests for VaultBackend path derivation + outcome mapping (C.3 Slice 3).
 
-The REAL k8s-TokenRequest + hvac reader is grounded at L2 against a live Vault
-(cluster-dependent) — not here. VaultBackend takes an injected reader, so its
+The REAL reader (KubernetesVaultReader: SA JWT → Vault k8s-auth login → KV v2
+read, httpx) is grounded at L2 against a live Vault (cluster-dependent) in
+test_vault_l2.py — not here. VaultBackend takes an injected reader, so its
 path-derivation + result-mapping logic is L1-testable with a fake.
 """
 from variables.types import VarRef
