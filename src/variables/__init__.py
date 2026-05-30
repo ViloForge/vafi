@@ -5,6 +5,7 @@ from .redactor import Redactor
 from .registry import BackendRegistry
 from .types import FetchResult, Role, VarName, VarRef
 from .validator import PreSpawnValidator, ValidationOutcome
+from .vault import ReadOutcome, VaultBackend, VaultReader, vault_path
 
 __all__ = [
     "FetchResult",
@@ -17,4 +18,8 @@ __all__ = [
     "PreSpawnValidator",
     "ValidationOutcome",
     "Redactor",
+    "VaultBackend",
+    "VaultReader",
+    "ReadOutcome",
+    "vault_path",
 ]
