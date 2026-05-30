@@ -147,6 +147,43 @@ Remaining for Slice 4 at controller-wiring time (Slice 5): supply `task`/`projec
 PKs + `controller_id` from the task context and PATCH `Task.secrets_snapshot`.
 **Blocker:** vtaskforge PR #18 must merge before the dev cluster has the endpoint.
 
+## Slice 5 — controller injection + probe (**core done 2026-05-30**; wiring + L4 next)
+
+**Done (L1, committed `b3f31a4`):**
+- `VariableMaterializer` (`src/variables/materializer.py`) — the spawn-time
+  orchestrator: parse `variables:` → `registry.fetch` → `PreSpawnValidator` →
+  fail-loud refusal *or* an `InjectionPlan` (env + files + audit rows + snapshot +
+  redactor). A task with **no** `variables:` block → empty `ok=True` plan (V16
+  no-op). Keeps `project_slug` (Vault-path identity) distinct from `project_pk`
+  (vtaskforge audit FK). 8 tests.
+- `HarnessInvoker` injection (`src/controller/invoker.py`) — `invoke`/`_run_harness`
+  take an optional `InjectionPlan`; `_apply_injection` writes file-bound secrets
+  (relative→workdir, absolute as-given, 0600) and returns the subprocess env
+  (`os.environ` overlaid). **No injection → `env=None` → inherit parent env,
+  byte-identical to today (V16).** 6 tests; existing 56 invoker tests unchanged.
+
+**Remaining (controller wiring + L4) — grounding gaps identified:**
+1. Wire the materializer into `controller.execute` *before* `invoker.invoke`:
+   on `ok=False` fail the task (no spawn); else pass the `InjectionPlan` to
+   `invoke`, emit `audit_records` (best-effort via `HttpAuditEmitter`), PATCH
+   `Task.secrets_snapshot`, and pipe stdout/stderr through `plan.redactor`.
+2. **`project_slug` source** — `TaskInfo.project_id` is the project **PK**
+   (`task.project.id`); the Vault path needs the **slug**. The vtaskforge
+   `ProjectSerializer` *does* expose `slug`, but the vafi-side `vtf-sdk-python`
+   `Project` entity does **not** parse it yet (same repo — `vtf-sdk-python/`).
+   Add `slug` to the SDK entity + carry `project_slug` on `TaskInfo`.
+3. **snapshot write path** — confirm the task-update endpoint/SDK accepts
+   `secrets_snapshot` (it's a writable `Task` JSONField).
+4. `AuditEmitter` wiring — vtf base URL + the controller's agent token from config.
+5. `/admin/probe` (vafi) + `vtf project var probe` (vtaskforge CLI).
+6. **L4** — needs the vafi feature image redeployed to vafi-dev + a test secret
+   seeded under the convention path: e2e (declare→run→agent-has-secret;
+   required-missing→no run) + scenario (black-box QA agent, external-effect goal).
+
+vtaskforge PR #18 (the audit receiver) is **merged + deployed + verified live** on
+`vtf-dev` (endpoint returns authenticated 200), so wiring #1/#4 can ground against
+the running endpoint.
+
 ## Sequencing
 1 → 2 → 3 → 4 → 5. Slices 1–2 are pure (mergeable immediately). 3 grounds the
 real Vault I/O against live dev Vault; 4 grounds the audit emit against a live
