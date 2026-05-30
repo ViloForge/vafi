@@ -11,14 +11,26 @@ from typing import Any
 Role = str        # "executor" | "judge"
 VarName = str
 
+# Per-variable fetch outcome (mirrors vtaskforge VariableAudit.result).
+RESULT_SUCCESS = "success"
+RESULT_NOT_FOUND = "not_found"
+RESULT_EMPTY = "empty"
+RESULT_UNREACHABLE = "unreachable"
+RESULT_PERMISSION_DENIED = "permission_denied"
+
 
 @dataclass
 class FetchResult:
-    """The result of fetching one variable's value from a backend."""
+    """The outcome of fetching one variable from a backend.
 
-    value: bytes                              # raw bytes — supports binary blobs
-    version: int | None                       # backend version (None for literal)
+    `value` is the raw bytes on success (None on failure). `result` classifies
+    the outcome for the validator + audit.
+    """
+
+    value: bytes | None = None                # raw bytes — supports binary blobs
+    version: int | None = None                # backend version (None for literal)
     audit_metadata: dict[str, Any] = field(default_factory=dict)
+    result: str = RESULT_SUCCESS
 
 
 @dataclass(frozen=True)
