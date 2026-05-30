@@ -78,6 +78,44 @@ explicit source/target + optional/required; LiteralBackend returns value bytes;
 registry dispatch (literal now; vault registered in Slice 3) + unknown-kind error;
 FetchResult shape.
 
+## Slice 3 — VaultBackend (L1 done; **L2 grounded 2026-05-30**)
+
+L1 (`tests/variables/test_vault.py`): `vault_path` derivation + outcome mapping
+with an injected fake `VaultReader`. Done in commit `272bae5`.
+
+**L2 — real `KubernetesVaultReader` grounded vs LIVE Vault** (`src/variables/vault_reader.py`,
+`tests/variables/test_vault_l2.py`). Vault is ClusterIP-only on the viloforge
+cluster, so the reader was exercised **inside the `vafi-executor` pod** (which
+runs as the `vtaskforge-executor` SA) against `https://vault.vault.svc:8200`
+(HA 3/3). All five outcomes verified by the real reader code, not a mock:
+
+| Outcome | How grounded | Result |
+|---|---|---|
+| `success` | seeded `…/c3-l2-probe/executor/MY_TOKEN` | value bytes + `version=1` |
+| `empty` | seeded blank `…/EMPTY_VAR` | `value=b""` |
+| `not_found` | in-policy missing path | 404 |
+| `permission_denied` | judge subtree (outside executor policy) | 403 |
+| `unreachable` | bogus port, transport error | classified `unreachable` |
+
+Grounded contract (do not re-derive from docs):
+- KV v2 read **requires** the `data/` path infix; the raw convention path is 403,
+  not 404. The reader strips the mount segment and re-prefixes `<mount>/data/`.
+- Login `POST /v1/auth/kubernetes/login {role, jwt}` → `auth.client_token`
+  (policies `[default, vtaskforge-executor]`, lease 3600s = the declared TTL).
+- Value key convention is `value` (operator: `vault kv put …/NAME value=…`);
+  blank or absent → `empty`.
+
+**Implementation note — `httpx`, not `hvac`.** The raw HTTP login+read contract
+was grounded directly, and `httpx` is already a vafi dependency used across
+`src/`. Using it (vs adding `hvac`) keeps the reader to the exact grounded
+contract, adds no new runtime dep, and avoids an image rebuild for Slice 3.
+
+α token source: the pod runs **as** the `vtaskforge-<role>` SA, so the SA JWT is
+the pod's own projected token. β swaps `_read_sa_jwt` for a `TokenRequest` mint —
+the login + read contract is unchanged (the seam's purpose).
+
 ## Sequencing
-1 → 2 → 3 → 4 → 5. Slices 1–2 are pure (mergeable immediately). 3 adds `hvac`; 5
-adds `kubernetes`. None changes behaviour for tasks without a `variables:` block.
+1 → 2 → 3 → 4 → 5. Slices 1–2 are pure (mergeable immediately). 3 grounds the
+real Vault I/O against live dev Vault (uses `httpx`, already a dep — see Slice 3
+note); 5 adds `kubernetes`. None changes behaviour for tasks without a
+`variables:` block.
