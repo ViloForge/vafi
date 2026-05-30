@@ -285,4 +285,15 @@ class VtfWorkSource:
             assigned_to=str(task.assigned_to) if task.assigned_to else None,
             workgraph_id=workgraph_id,
             base_ref=getattr(task, "base_ref", "") or "",
+            variables=list(getattr(task, "variables", []) or []),
         )
+
+    async def get_project_slug(self, project_id: str) -> str:
+        """Resolve the project's K8s-safe slug (the Vault-path identity, C.3).
+
+        The task's embedded project ref is {id, name} only — the slug lives on the
+        full project resource — so this fetches it. Called lazily (only for tasks
+        that declare variables), off the hot path.
+        """
+        project = await self._client.projects.get(project_id)
+        return getattr(project, "slug", "") or ""

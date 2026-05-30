@@ -24,6 +24,7 @@ V2_TASK = {
     "created_by": {"type": "user", "id": "42", "username": "jdoe"},
     "spec": "...",
     "agent_model": "sonnet",
+    "variables": [{"name": "GH_TOKEN"}],
     "test_command": {"unit": "pytest tests/"},
     "judge": True,
     "isolation": "worktree",
@@ -129,6 +130,18 @@ class TestTaskEntity:
         task = Task.model_validate(V2_TASK)
         assert isinstance(task.project, ProjectRef)
         assert task.project.name == "Auth System"
+
+    def test_task_exposes_variables(self):
+        """C.3 Slice 5: the declared variables: spec the controller materializes."""
+        from vtf_sdk.entities import Task
+        task = Task.model_validate(V2_TASK)
+        assert task.variables == [{"name": "GH_TOKEN"}]
+
+    def test_task_variables_default_empty(self):
+        """Forward-compat: a task without variables parses to []."""
+        from vtf_sdk.entities import Task
+        payload = {k: v for k, v in V2_TASK.items() if k != "variables"}
+        assert Task.model_validate(payload).variables == []
 
     def test_task_claimed_by_actor_ref(self):
         """DoD #3"""

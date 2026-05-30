@@ -70,6 +70,7 @@ class Task(VtfModel):
     created_by: ActorRef | None = None
     spec: str = ""
     agent_model: str = ""
+    variables: list[dict] = []   # declared variables: spec (C.3); materialized at spawn
     test_command: dict = {}
     judge: bool = False
     isolation: str = ""

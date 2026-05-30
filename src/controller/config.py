@@ -19,6 +19,11 @@ class AgentConfig:
     vtf_token: str = ""
     poll_interval: int = 30
 
+    # C.3 variables substrate (Vault-backed secret injection at spawn time).
+    vault_addr: str = "https://vault.vault.svc:8200"
+    vault_skip_verify: bool = False
+    controller_env: str = "dev"
+
     task_timeout: int = 600
     max_rework: int = 3
     max_turns: int = 50
@@ -53,6 +58,9 @@ class AgentConfig:
             agent_tags=tags,
             vtf_api_url=os.environ.get("VF_VTF_API_URL", cls.vtf_api_url),
             vtf_token=os.environ.get("VF_VTF_TOKEN", ""),
+            vault_addr=os.environ.get("VF_VAULT_ADDR", cls.vault_addr),
+            vault_skip_verify=os.environ.get("VF_VAULT_SKIP_VERIFY", "").lower() in ("1", "true"),
+            controller_env=os.environ.get("VF_CONTROLLER_ENV", cls.controller_env),
             poll_interval=int(os.environ.get("VF_POLL_INTERVAL", "30")),
             task_timeout=int(os.environ.get("VF_TASK_TIMEOUT", "600")),
             max_rework=int(os.environ.get("VF_MAX_REWORK", "3")),
