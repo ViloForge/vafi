@@ -40,6 +40,7 @@ V2_TASK = {
 
 V2_PROJECT = {
     "id": "p1", "name": "Auth System", "description": "Auth service",
+    "slug": "auth-system",
     "status": "active", "repo_url": "https://github.com/x/y",
     "default_branch": "main", "tags": ["backend"],
     "owner": {"type": "user", "id": "42", "username": "jdoe"},
@@ -168,6 +169,18 @@ class TestOtherEntities:
         proj = Project.model_validate(V2_PROJECT)
         assert isinstance(proj.owner, UserActor)
         assert proj.owner.username == "jdoe"
+
+    def test_project_exposes_slug(self):
+        """C.3 Slice 5: the K8s-safe Vault-path identity (vtaskforge#C.2)."""
+        from vtf_sdk.entities import Project
+        proj = Project.model_validate(V2_PROJECT)
+        assert proj.slug == "auth-system"
+
+    def test_project_slug_defaults_empty_when_absent(self):
+        """Forward-compat: an older API response without slug parses fine."""
+        from vtf_sdk.entities import Project
+        payload = {k: v for k, v in V2_PROJECT.items() if k != "slug"}
+        assert Project.model_validate(payload).slug == ""
 
     def test_workplan_model_validate(self):
         """DoD #8"""

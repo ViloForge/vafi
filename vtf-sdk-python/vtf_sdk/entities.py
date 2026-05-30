@@ -92,6 +92,7 @@ class Task(VtfModel):
 class Project(VtfModel):
     id: str
     name: str
+    slug: str = ""          # K8s-safe immutable identity (vtaskforge C.2); Vault-path segment
     description: str = ""
     status: str = ""
     repo_url: str = ""
