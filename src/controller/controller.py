@@ -5,6 +5,7 @@ It polls for work, claims tasks, executes them via harness invocation, and repor
 """
 
 import asyncio
+import dataclasses
 import logging
 import signal
 import tempfile
@@ -46,6 +47,11 @@ class Controller:
         self._shutdown = asyncio.Event()
         self._agent_info = None
         self._invoker = HarnessInvoker(config)
+        # C.3 variables substrate. Constructed after agent registration (needs the
+        # agent token for audit emission). None ⇒ no variables handling, so spawns
+        # are byte-identical to today (V16) — also the path for unit tests that
+        # call execute() without going through run().
+        self._variables_stage = None
         self._summarizer = None  # Set via set_summarizer() after construction
         # vfobs emission — no-op unless the optional SDK is present
         # AND emission is enabled+configured (degradable; never on
@@ -90,6 +96,18 @@ class Controller:
                 tags=self.config.agent_tags
             )
             logger.info(f"Registered as agent {self._agent_info.id}")
+
+            # C.3: build the variables stage now that we have the agent token
+            # (used to authenticate audit emission). Best-effort — a failure here
+            # must not stop the controller; tasks without variables are unaffected.
+            try:
+                from .variables_stage import VariablesStage
+                self._variables_stage = VariablesStage.from_config(
+                    self.config, self.work_source, getattr(self._agent_info, "token", "") or "",
+                )
+            except Exception as exc:  # noqa: BLE001 - degrade, never crash the loop
+                logger.warning(f"variables stage unavailable: {exc}")
+                self._variables_stage = None
 
             # Start agent-level heartbeat loop (runs always, independent of tasks)
             agent_hb_task = asyncio.create_task(
@@ -476,6 +494,31 @@ class Controller:
         try:
             logger.info(f"Creating workdir for task {task.id}: {workdir}")
 
+            # C.3 variables substrate: fetch + validate declared secrets BEFORE any
+            # repo work or harness process. A required secret that can't be
+            # satisfied fails loud here — nothing is cloned, nothing is spawned.
+            # No variables (or no stage) ⇒ injection=None ⇒ byte-identical (V16).
+            injection = None
+            if self._variables_stage is not None and getattr(task, "variables", None):
+                injection = await self._variables_stage.prepare(task)
+                await self._variables_stage.record(task, injection)  # forensics, best-effort
+                if not injection.ok:
+                    logger.error(
+                        f"variables fail-loud for task {task.id}: "
+                        f"{injection.failure_reason} {injection.failure_detail}"
+                    )
+                    return ExecutionResult(
+                        success=False,
+                        session_id=None,
+                        completion_report=(
+                            f"variables fail-loud: {injection.failure_reason}: "
+                            f"{injection.failure_detail}"
+                        ),
+                        cost_usd=0.0,
+                        num_turns=0,
+                        gate_results=[],
+                    )
+
             # WC-2/D1: per-task clone ref — the server-derived base_ref
             # (the milestone integration branch for a workgraph task;
             # project default otherwise — V16 byte-identical).
@@ -504,8 +547,17 @@ class Controller:
                 task_id=task.id, source=_src,
                 turn_number=0, model=self.config.harness,
             )
-            # Invoke harness (clone is no-op since repo already cloned above)
-            result = await self._invoker.invoke(task, repo_info, workdir, prompt)
+            # Invoke harness (clone is no-op since repo already cloned above).
+            # injection carries the validated secrets (env + files); None ⇒ today's
+            # behaviour exactly.
+            result = await self._invoker.invoke(task, repo_info, workdir, prompt, injection=injection)
+            # Defense-in-depth: scrub any known vault secret value from the
+            # surfaced completion report (the redactor is a no-op when injection
+            # is None or carries no maskable values).
+            if injection is not None and result.completion_report:
+                redacted = injection.redactor.redact(result.completion_report)
+                if redacted != result.completion_report:
+                    result = dataclasses.replace(result, completion_report=redacted)
             safe_emit(
                 self._emitter, "harness_turn_completed",
                 workgraph_id=getattr(task, "workgraph_id", ""),

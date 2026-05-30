@@ -24,6 +24,7 @@ V2_TASK = {
     "created_by": {"type": "user", "id": "42", "username": "jdoe"},
     "spec": "...",
     "agent_model": "sonnet",
+    "variables": [{"name": "GH_TOKEN"}],
     "test_command": {"unit": "pytest tests/"},
     "judge": True,
     "isolation": "worktree",
@@ -40,6 +41,7 @@ V2_TASK = {
 
 V2_PROJECT = {
     "id": "p1", "name": "Auth System", "description": "Auth service",
+    "slug": "auth-system",
     "status": "active", "repo_url": "https://github.com/x/y",
     "default_branch": "main", "tags": ["backend"],
     "owner": {"type": "user", "id": "42", "username": "jdoe"},
@@ -129,6 +131,18 @@ class TestTaskEntity:
         assert isinstance(task.project, ProjectRef)
         assert task.project.name == "Auth System"
 
+    def test_task_exposes_variables(self):
+        """C.3 Slice 5: the declared variables: spec the controller materializes."""
+        from vtf_sdk.entities import Task
+        task = Task.model_validate(V2_TASK)
+        assert task.variables == [{"name": "GH_TOKEN"}]
+
+    def test_task_variables_default_empty(self):
+        """Forward-compat: a task without variables parses to []."""
+        from vtf_sdk.entities import Task
+        payload = {k: v for k, v in V2_TASK.items() if k != "variables"}
+        assert Task.model_validate(payload).variables == []
+
     def test_task_claimed_by_actor_ref(self):
         """DoD #3"""
         from vtf_sdk.entities import Task
@@ -168,6 +182,18 @@ class TestOtherEntities:
         proj = Project.model_validate(V2_PROJECT)
         assert isinstance(proj.owner, UserActor)
         assert proj.owner.username == "jdoe"
+
+    def test_project_exposes_slug(self):
+        """C.3 Slice 5: the K8s-safe Vault-path identity (vtaskforge#C.2)."""
+        from vtf_sdk.entities import Project
+        proj = Project.model_validate(V2_PROJECT)
+        assert proj.slug == "auth-system"
+
+    def test_project_slug_defaults_empty_when_absent(self):
+        """Forward-compat: an older API response without slug parses fine."""
+        from vtf_sdk.entities import Project
+        payload = {k: v for k, v in V2_PROJECT.items() if k != "slug"}
+        assert Project.model_validate(payload).slug == ""
 
     def test_workplan_model_validate(self):
         """DoD #8"""

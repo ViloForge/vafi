@@ -133,6 +133,14 @@ class WorkSource(Protocol):
         """
         ...
 
+    async def get_project_slug(self, project_id: str) -> str:
+        """Resolve a project's K8s-safe slug (the C.3 variables Vault-path identity).
+
+        The task's embedded project ref is {id, name} only, so this fetches the
+        full project. Called lazily, only for tasks that declare variables.
+        """
+        ...
+
     async def get_task_repo_info(self, task: TaskInfo) -> RepoInfo:
         """WC-2/D1: per-task clone ref (server-derived base_ref).
 

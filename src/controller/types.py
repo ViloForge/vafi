@@ -5,7 +5,7 @@ They are shared across the controller, WorkSource protocol, and VtfWorkSource
 implementation.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -52,6 +52,10 @@ class TaskInfo:
     # TaskInfo(...) constructions don't regress (V16). Empty ⇒ fall back
     # to the project default branch (today's clone behaviour).
     base_ref: str = ""
+    # C.3 declared variables: spec (vtaskforge Task.variables). Defaulted so
+    # existing TaskInfo(...) constructions don't regress (V16). Empty ⇒ the
+    # materializer no-ops and the spawn is byte-identical to today.
+    variables: list[dict] = field(default_factory=list)
 
 
 @dataclass

@@ -13,14 +13,18 @@ rather than Docker API calls.
 import asyncio
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 
 from .config import AgentConfig
 from .types import TaskInfo, RepoInfo, ExecutionResult
+
+if TYPE_CHECKING:
+    from variables.materializer import InjectionPlan
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +126,8 @@ class HarnessInvoker:
         task: TaskInfo,
         repo: RepoInfo,
         workdir: Path,
-        prompt: str
+        prompt: str,
+        injection: "InjectionPlan | None" = None,
     ) -> ExecutionResult:
         """Execute a task using the AI harness.
 
@@ -152,8 +157,8 @@ class HarnessInvoker:
             # Phase 1: Setup repository
             await self._ensure_repo_cloned(repo, workdir)
 
-            # Phase 2: Invoke harness
-            result = await self._run_harness(prompt, workdir, task.id)
+            # Phase 2: Invoke harness (with variable injection if any)
+            result = await self._run_harness(prompt, workdir, task.id, injection)
 
             # Phase 3: Parse output
             execution_result = self._parse_harness_output(result, task.id)
@@ -304,7 +309,38 @@ class HarnessInvoker:
             ] + pi_args
         return ["pi"] + pi_args
 
-    async def _run_harness(self, prompt: str, workdir: Path, task_id: str) -> subprocess.CompletedProcess:
+    def _apply_injection(
+        self, workdir: Path, injection: "InjectionPlan | None"
+    ) -> dict | None:
+        """Write file-bound secrets and return the subprocess env, or None.
+
+        Returns None when there is nothing to inject so the spawn is byte-identical
+        to the no-variables path (V16): asyncio inherits the parent env. When env
+        vars are present, returns a copy of os.environ overlaid with them.
+        File targets: relative paths resolve under the task workdir; absolute
+        paths are honoured as given (the agent's home, per the design's
+        pointer-style binding). Files are written 0600.
+        """
+        if injection is None:
+            return None
+        for f in injection.files:
+            target = Path(f.path)
+            if not target.is_absolute():
+                target = workdir / target
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(f.content)
+            os.chmod(target, 0o600)
+        if not injection.env:
+            return None
+        return {**os.environ, **injection.env}
+
+    async def _run_harness(
+        self,
+        prompt: str,
+        workdir: Path,
+        task_id: str,
+        injection: "InjectionPlan | None" = None,
+    ) -> subprocess.CompletedProcess:
         """Run the AI harness as a subprocess.
 
         Builds the CLI command for the configured harness (claude or pi)
@@ -330,6 +366,10 @@ class HarnessInvoker:
         logger.info(f"Starting harness for task {task_id} with timeout {self.config.task_timeout}s")
         logger.debug(f"Harness command: {' '.join(cmd)}")
 
+        # Inject variables: write file-bound secrets, build the subprocess env
+        # (None ⇒ inherit parent env, byte-identical to the no-variables path).
+        subprocess_env = self._apply_injection(workdir, injection)
+
         try:
             # Run harness as subprocess
             # Note: Using asyncio.create_subprocess_exec for async operation
@@ -337,7 +377,8 @@ class HarnessInvoker:
                 *cmd,
                 cwd=str(workdir),
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                env=subprocess_env,
             )
 
             # Wait with timeout

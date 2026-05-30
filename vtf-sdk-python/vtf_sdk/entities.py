@@ -70,6 +70,7 @@ class Task(VtfModel):
     created_by: ActorRef | None = None
     spec: str = ""
     agent_model: str = ""
+    variables: list[dict] = []   # declared variables: spec (C.3); materialized at spawn
     test_command: dict = {}
     judge: bool = False
     isolation: str = ""
@@ -92,6 +93,7 @@ class Task(VtfModel):
 class Project(VtfModel):
     id: str
     name: str
+    slug: str = ""          # K8s-safe immutable identity (vtaskforge C.2); Vault-path segment
     description: str = ""
     status: str = ""
     repo_url: str = ""
