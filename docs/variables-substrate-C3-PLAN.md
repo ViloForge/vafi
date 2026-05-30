@@ -114,8 +114,41 @@ contract, adds no new runtime dep, and avoids an image rebuild for Slice 3.
 the pod's own projected token. β swaps `_read_sa_jwt` for a `TokenRequest` mint —
 the login + read contract is unchanged (the seam's purpose).
 
+## Slice 4 — audit + snapshot emit (L1 done; **L3 grounded 2026-05-30**)
+
+Two pure builders + an I/O emitter (`src/variables/audit.py`,
+`src/variables/audit_emitter.py`):
+- `build_audit_record` → one forensic `VariableAudit` per Vault read. The
+  `AuditRecord` dataclass structurally has **no value field**; `to_body` emits
+  exactly `AUDIT_BODY_FIELDS` — the writable subset of the vtaskforge
+  `VariableAuditSerializer`. L1 asserts the value/hash/prefix never appears in
+  the body under any key spelling, and that the key set is exactly the contract.
+- `build_secrets_snapshot` → `{name: vault_version}` for every read that
+  resolved to a real KV version (success or empty-but-present); literals and
+  availability/value failures (no version) are excluded.
+- `HttpAuditEmitter` → append-only POST to `/v1/variable-audits/` with the
+  controller's `Token` auth; raises on non-2xx so the caller can log-and-continue
+  (emission is best-effort forensics, never a spawn gate — wired in Slice 5).
+
+**L3 — vafi emit ↔ live vtaskforge endpoint** (`tests/variables/test_audit_l3.py`,
+env-gated). The real `HttpAuditEmitter` posted vafi-built bodies to a **live**
+vtaskforge server (the `/v1/variable-audits/` receiver from vtaskforge PR #18) on
+a migrated postgres: 201 accepted, the row round-trips on list with
+result/version/scope/size, and **no value/hash/prefix crossed the boundary**
+(server logged `POST … 201`). The vtaskforge side (`tests/variables/test_audit_api.py`,
+7 passed) covers create/each-result/null-size/no-value-surface/auth/scoping.
+Grounded contract: writable field set is exactly
+`{timestamp, task, project, variable_name, variable_scope, vault_path,
+vault_version, result, size_bytes, duration_ms, controller_id}`; `task`/`project`
+are FK PKs (distinct from the slug used in the Vault path); `result`/`scope`
+vocabularies match vafi's constants byte-for-byte.
+
+Remaining for Slice 4 at controller-wiring time (Slice 5): supply `task`/`project`
+PKs + `controller_id` from the task context and PATCH `Task.secrets_snapshot`.
+**Blocker:** vtaskforge PR #18 must merge before the dev cluster has the endpoint.
+
 ## Sequencing
 1 → 2 → 3 → 4 → 5. Slices 1–2 are pure (mergeable immediately). 3 grounds the
-real Vault I/O against live dev Vault (uses `httpx`, already a dep — see Slice 3
-note); 5 adds `kubernetes`. None changes behaviour for tasks without a
-`variables:` block.
+real Vault I/O against live dev Vault; 4 grounds the audit emit against a live
+vtaskforge endpoint (both use `httpx`, already a dep — see Slice 3 note); 5 adds
+`kubernetes`. None changes behaviour for tasks without a `variables:` block.
