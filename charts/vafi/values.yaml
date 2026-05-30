@@ -219,6 +219,17 @@ vtf:
   mcpUrl: ""               # required for bridge — in-cluster vtf MCP URL (e.g. http://vtf-mcp.<ns>.svc.cluster.local:8002/mcp)
 
 # ---------------------------------------------------------------------------
+# C.3 variables substrate — Vault-backed secret injection at spawn time.
+# skipVerify=true on dev because the agent pods don't trust the internal
+# Vault CA (L4 finding 2026-05-30). TODO: mount the Vault CA + verify TLS,
+# then flip skipVerify=false (needs a VF_VAULT_CA path option in the reader).
+# ---------------------------------------------------------------------------
+vault:
+  addr: "https://vault.vault.svc:8200"
+  skipVerify: true
+  controllerEnv: "dev"
+
+# ---------------------------------------------------------------------------
 # vfobs observability emission (WG5-min). Default OFF — agents run
 # exactly as before unless explicitly enabled. When enabled the
 # controller emits task.* / harness.* events to vfobs (fire-and-

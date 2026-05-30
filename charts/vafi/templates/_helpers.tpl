@@ -124,6 +124,12 @@ Common environment variables for the executor container.
   value: {{ .Values.executor.heartbeatInterval | quote }}
 - name: VF_SESSIONS_DIR
   value: {{ .Values.executor.sessionsDir | quote }}
+- name: VF_VAULT_ADDR
+  value: {{ .Values.vault.addr | quote }}
+- name: VF_VAULT_SKIP_VERIFY
+  value: {{ .Values.vault.skipVerify | quote }}
+- name: VF_CONTROLLER_ENV
+  value: {{ .Values.vault.controllerEnv | quote }}
 {{- if .Values.cxdb.enabled }}
 - name: VF_CXDB_URL
   value: "http://{{ include "vafi.cxdbName" . }}:80"
@@ -195,6 +201,12 @@ The pi binary reads ANTHROPIC_API_KEY (anthropic SDK), not ANTHROPIC_AUTH_TOKEN.
   value: {{ .Values.executorPi.heartbeatInterval | quote }}
 - name: VF_SESSIONS_DIR
   value: {{ .Values.executorPi.sessionsDir | quote }}
+- name: VF_VAULT_ADDR
+  value: {{ .Values.vault.addr | quote }}
+- name: VF_VAULT_SKIP_VERIFY
+  value: {{ .Values.vault.skipVerify | quote }}
+- name: VF_CONTROLLER_ENV
+  value: {{ .Values.vault.controllerEnv | quote }}
 {{- if .Values.cxdb.enabled }}
 - name: VF_CXDB_URL
   value: "http://{{ include "vafi.cxdbName" . }}:80"
