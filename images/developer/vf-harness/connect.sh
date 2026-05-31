@@ -28,6 +28,11 @@ case "$HARNESS" in
     # exists; gemini falls back to new session if none.
     exec gemini -y --resume latest "$@" 2>/dev/null || exec gemini -y "$@"
     ;;
+  agy)
+    # --dangerously-skip-permissions = auto-approve tool actions. -c/--continue resumes the
+    # most recent conversation in this context if one exists; agy falls back to new if none.
+    exec agy --continue --dangerously-skip-permissions "$@" 2>/dev/null || exec agy --dangerously-skip-permissions "$@"
+    ;;
   *)
     echo >&2 "[connect] Unknown VF_HARNESS=$HARNESS"
     exec bash

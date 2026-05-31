@@ -96,7 +96,7 @@ main() {
     base)
       build_base
       ;;
-    claude|pi|gemini)
+    claude|pi|gemini|agy)
       build_leaf "$target"
       ;;
     all|"")
@@ -104,10 +104,11 @@ main() {
       build_leaf claude
       build_leaf pi
       build_leaf gemini
+      build_leaf agy
       ;;
     *)
       err "Unknown target: $target"
-      err "Usage: $0 [base|claude|pi|gemini|all]"
+      err "Usage: $0 [base|claude|pi|gemini|agy|all]"
       exit 2
       ;;
   esac
