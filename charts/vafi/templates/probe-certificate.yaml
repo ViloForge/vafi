@@ -1,0 +1,16 @@
+{{- if and .Values.probe.enabled .Values.probe.ingress.enabled .Values.probe.ingress.host }}
+# TLS cert for the probe Ingress host (mirrors the cxdb cert pattern).
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vafi.fullname" . }}-probe-tls
+  labels:
+    {{- include "vafi.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.probe.ingress.tlsSecretName }}
+  dnsNames:
+    - {{ .Values.probe.ingress.host }}
+  issuerRef:
+    name: {{ .Values.probe.ingress.issuerRef.name }}
+    kind: {{ .Values.probe.ingress.issuerRef.kind }}
+{{- end }}

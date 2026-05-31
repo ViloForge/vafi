@@ -33,6 +33,19 @@ async def main():
     logger.info("Starting vafi controller")
     logger.info(f"\n{config.display()}")
 
+    # Onboarding-probe HTTP server (C.3 Slice 5 #5) — daemon thread, opt-in via
+    # VF_PROBE_PORT. Reuses the executor SA's Vault access; no-op when port=0.
+    if config.probe_port:
+        from datetime import datetime, timezone
+
+        from controller.probe_server import start_probe_server
+
+        start_probe_server(
+            config,
+            config.probe_port,
+            now=lambda: datetime.now(timezone.utc).isoformat(),
+        )
+
     # Create AsyncVtfClient with bootstrap token for registration
     vtf_client = AsyncVtfClient(url=config.vtf_api_url, token=config.vtf_token or "")
 

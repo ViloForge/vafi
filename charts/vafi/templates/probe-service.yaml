@@ -1,0 +1,21 @@
+{{- if .Values.probe.enabled }}
+# ClusterIP Service for the executor's onboarding-probe HTTP endpoint
+# (POST /admin/probe). Selects the executor pods (which hold the Vault-executor
+# SA). Reached in-cluster, or via the probe Ingress when enabled.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vafi.fullname" . }}-probe
+  labels:
+    {{- include "vafi.labels" . | nindent 4 }}
+    {{- include "vafi.selectorLabels" (dict "root" . "component" "executor") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.probe.port }}
+      targetPort: probe
+      protocol: TCP
+      name: probe
+  selector:
+    {{- include "vafi.selectorLabels" (dict "root" . "component" "executor") | nindent 4 }}
+{{- end }}

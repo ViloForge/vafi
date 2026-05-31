@@ -47,6 +47,12 @@ spec:
           securityContext:
             runAsUser: 1001
             runAsNonRoot: true
+          {{- if .Values.probe.enabled }}
+          ports:
+            - name: probe
+              containerPort: {{ .Values.probe.port }}
+              protocol: TCP
+          {{- end }}
           env:
             - name: POD_NAME
               valueFrom:

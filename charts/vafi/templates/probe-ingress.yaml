@@ -1,0 +1,32 @@
+{{- if and .Values.probe.enabled .Values.probe.ingress.enabled .Values.probe.ingress.host }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "vafi.fullname" . }}-probe
+  labels:
+    {{- include "vafi.labels" . | nindent 4 }}
+    {{- include "vafi.selectorLabels" (dict "root" . "component" "executor") | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.probe.ingress.host }}
+      http:
+        paths:
+          - backend:
+              service:
+                name: {{ include "vafi.fullname" . }}-probe
+                port:
+                  number: {{ .Values.probe.port }}
+            path: /admin/probe
+            pathType: Prefix
+  tls:
+    - hosts:
+        - {{ .Values.probe.ingress.host }}
+      secretName: {{ .Values.probe.ingress.tlsSecretName }}
+{{- end }}
