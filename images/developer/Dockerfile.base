@@ -9,7 +9,11 @@
 # (git, curl, openssh-client, jq, python3, yarn) for free.
 
 ARG REGISTRY=vafi
-FROM ${REGISTRY}/vafi-base:latest
+# VAFI_BASE_TAG lets CI pin the fleet base by commit-sha (the in-cluster
+# build-developer-images workflow passes the sha it just built); defaults to
+# `latest` for local builds.
+ARG VAFI_BASE_TAG=latest
+FROM ${REGISTRY}/vafi-base:${VAFI_BASE_TAG}
 
 USER root
 
