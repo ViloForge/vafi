@@ -34,6 +34,21 @@ from variables.vault_reader import KubernetesVaultReader
 logger = logging.getLogger("controller.variables")
 
 
+def resolve_vault_verify(config) -> bool | str:
+    """Map config to httpx's ``verify`` for the Vault reader.
+
+    Precedence (skip_verify is the explicit escape hatch and wins):
+      * ``vault_skip_verify`` true  -> ``False`` (no TLS verification)
+      * else ``vault_ca_cert`` set  -> the CA bundle path (verify against it)
+      * else                        -> ``True`` (system trust store)
+    """
+    if config.vault_skip_verify:
+        return False
+    if config.vault_ca_cert:
+        return config.vault_ca_cert
+    return True
+
+
 class VariablesStage:
     def __init__(
         self,
@@ -57,7 +72,7 @@ class VariablesStage:
     @classmethod
     def from_config(cls, config, work_source, agent_token: str) -> "VariablesStage":
         reader = KubernetesVaultReader(
-            config.vault_addr, verify=not config.vault_skip_verify
+            config.vault_addr, verify=resolve_vault_verify(config)
         )
         registry = BackendRegistry()
         registry.register("vault", VaultBackend(reader))

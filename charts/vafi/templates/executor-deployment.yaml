@@ -58,6 +58,11 @@ spec:
               mountPath: {{ .Values.executor.sessionsDir }}
             - name: ssh-ready
               mountPath: /home/agent/.ssh
+            {{- if .Values.vault.caCert.enabled }}
+            - name: vault-ca
+              mountPath: {{ .Values.vault.caCert.mountPath }}
+              readOnly: true
+            {{- end }}
           resources:
             {{- toYaml .Values.executor.resources | nindent 12 }}
           readinessProbe:
@@ -89,4 +94,12 @@ spec:
             secretName: {{ .Values.sshSecret.name }}
         - name: ssh-ready
           emptyDir: {}
+        {{- if .Values.vault.caCert.enabled }}
+        - name: vault-ca
+          secret:
+            secretName: {{ include "vafi.vaultCaSecretName" . }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}
       restartPolicy: Always

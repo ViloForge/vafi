@@ -11,11 +11,28 @@ import pytest
 from controller.config import AgentConfig
 from controller.controller import Controller
 from controller.types import TaskInfo
-from controller.variables_stage import VariablesStage
+from controller.variables_stage import VariablesStage, resolve_vault_verify
 from variables.literal import LiteralBackend
 from variables.materializer import VariableMaterializer
 from variables.registry import BackendRegistry
 from variables.vault import ReadOutcome, VaultBackend
+
+
+class TestResolveVaultVerify:
+    """The Vault TLS-verify selection (C.3 #2 — proper CA trust)."""
+
+    def test_skip_verify_disables_verification(self):
+        cfg = AgentConfig(vault_skip_verify=True, vault_ca_cert="/ca.crt")
+        # skip_verify is the explicit escape hatch and wins over a CA path.
+        assert resolve_vault_verify(cfg) is False
+
+    def test_ca_cert_path_used_when_not_skipping(self):
+        cfg = AgentConfig(vault_skip_verify=False, vault_ca_cert="/etc/vafi/vault-ca/ca.crt")
+        assert resolve_vault_verify(cfg) == "/etc/vafi/vault-ca/ca.crt"
+
+    def test_defaults_to_system_trust_store(self):
+        cfg = AgentConfig(vault_skip_verify=False, vault_ca_cert="")
+        assert resolve_vault_verify(cfg) is True
 
 
 class _NoSecretsReader:

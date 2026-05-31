@@ -38,6 +38,15 @@ class TestAgentConfig:
         assert config.agent_role == "executor"
         assert config.poll_interval == 30
 
+    def test_vault_ca_cert_from_env(self, monkeypatch):
+        monkeypatch.setenv("VF_VAULT_CA", "/etc/vafi/vault-ca/ca.crt")
+        config = AgentConfig.from_env()
+        assert config.vault_ca_cert == "/etc/vafi/vault-ca/ca.crt"
+
+    def test_vault_ca_cert_defaults_empty(self):
+        config = AgentConfig.from_env()
+        assert config.vault_ca_cert == ""
+
     def test_config_reads_pod_name_from_env(self, monkeypatch):
         monkeypatch.setenv("POD_NAME", "vafi-executor-abc123")
         config = AgentConfig.from_env()
