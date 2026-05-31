@@ -28,6 +28,8 @@ class AgentConfig:
     # disabling verification. Empty => fall back to the system trust store.
     vault_ca_cert: str = ""
     controller_env: str = "dev"
+    # Onboarding-probe HTTP server port (C.3 Slice 5 #5). 0 = disabled.
+    probe_port: int = 0
 
     task_timeout: int = 600
     max_rework: int = 3
@@ -67,6 +69,7 @@ class AgentConfig:
             vault_skip_verify=os.environ.get("VF_VAULT_SKIP_VERIFY", "").lower() in ("1", "true"),
             vault_ca_cert=os.environ.get("VF_VAULT_CA", ""),
             controller_env=os.environ.get("VF_CONTROLLER_ENV", cls.controller_env),
+            probe_port=int(os.environ.get("VF_PROBE_PORT", "0")),
             poll_interval=int(os.environ.get("VF_POLL_INTERVAL", "30")),
             task_timeout=int(os.environ.get("VF_TASK_TIMEOUT", "600")),
             max_rework=int(os.environ.get("VF_MAX_REWORK", "3")),

@@ -242,6 +242,24 @@ vault:
     mountPath: /etc/vafi/vault-ca
 
 # ---------------------------------------------------------------------------
+# Onboarding probe (C.3 Slice 5 #5) — operator pre-flight that resolves a
+# project's declared variables and reports per-variable status (no values).
+# Served by the executor (which holds the Vault-executor SA) on a ClusterIP
+# port; caller auth is the caller's vtaskforge token. Set ingress.host in the
+# env overlay to expose it for the `vtf project var probe` CLI.
+# ---------------------------------------------------------------------------
+probe:
+  enabled: true
+  port: 8090
+  ingress:
+    enabled: false
+    host: ""
+    issuerRef:
+      name: letsencrypt-prod
+      kind: ClusterIssuer
+    tlsSecretName: vafi-probe-tls
+
+# ---------------------------------------------------------------------------
 # vfobs observability emission (WG5-min). Default OFF — agents run
 # exactly as before unless explicitly enabled. When enabled the
 # controller emits task.* / harness.* events to vfobs (fire-and-

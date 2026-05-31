@@ -142,6 +142,10 @@ Common environment variables for the executor container.
 {{- end }}
 - name: VF_CONTROLLER_ENV
   value: {{ .Values.vault.controllerEnv | quote }}
+{{- if .Values.probe.enabled }}
+- name: VF_PROBE_PORT
+  value: {{ .Values.probe.port | quote }}
+{{- end }}
 {{- if .Values.cxdb.enabled }}
 - name: VF_CXDB_URL
   value: "http://{{ include "vafi.cxdbName" . }}:80"
