@@ -56,6 +56,14 @@ Uses existingSecret if set, otherwise generates from release name.
 {{- end }}
 
 {{/*
+Name of the secret holding the mounted Vault CA bundle (cert-manager fills its
+ca.crt). Defaults to <fullname>-vault-ca unless vault.caCert.secretName is set.
+*/}}
+{{- define "vafi.vaultCaSecretName" -}}
+{{- .Values.vault.caCert.secretName | default (printf "%s-vault-ca" (include "vafi.fullname" .)) -}}
+{{- end }}
+
+{{/*
 CXDB service name.
 */}}
 {{- define "vafi.cxdbName" -}}
@@ -128,6 +136,10 @@ Common environment variables for the executor container.
   value: {{ .Values.vault.addr | quote }}
 - name: VF_VAULT_SKIP_VERIFY
   value: {{ .Values.vault.skipVerify | quote }}
+{{- if .Values.vault.caCert.enabled }}
+- name: VF_VAULT_CA
+  value: {{ printf "%s/ca.crt" .Values.vault.caCert.mountPath | quote }}
+{{- end }}
 - name: VF_CONTROLLER_ENV
   value: {{ .Values.vault.controllerEnv | quote }}
 {{- if .Values.cxdb.enabled }}
@@ -205,6 +217,10 @@ The pi binary reads ANTHROPIC_API_KEY (anthropic SDK), not ANTHROPIC_AUTH_TOKEN.
   value: {{ .Values.vault.addr | quote }}
 - name: VF_VAULT_SKIP_VERIFY
   value: {{ .Values.vault.skipVerify | quote }}
+{{- if .Values.vault.caCert.enabled }}
+- name: VF_VAULT_CA
+  value: {{ printf "%s/ca.crt" .Values.vault.caCert.mountPath | quote }}
+{{- end }}
 - name: VF_CONTROLLER_ENV
   value: {{ .Values.vault.controllerEnv | quote }}
 {{- if .Values.cxdb.enabled }}

@@ -22,6 +22,11 @@ class AgentConfig:
     # C.3 variables substrate (Vault-backed secret injection at spawn time).
     vault_addr: str = "https://vault.vault.svc:8200"
     vault_skip_verify: bool = False
+    # Path to a CA bundle that signs the Vault serving cert. When set (and
+    # skip_verify is false) the reader verifies TLS against this CA instead of
+    # the system trust store — lets pods trust the internal vault-ca without
+    # disabling verification. Empty => fall back to the system trust store.
+    vault_ca_cert: str = ""
     controller_env: str = "dev"
 
     task_timeout: int = 600
@@ -60,6 +65,7 @@ class AgentConfig:
             vtf_token=os.environ.get("VF_VTF_TOKEN", ""),
             vault_addr=os.environ.get("VF_VAULT_ADDR", cls.vault_addr),
             vault_skip_verify=os.environ.get("VF_VAULT_SKIP_VERIFY", "").lower() in ("1", "true"),
+            vault_ca_cert=os.environ.get("VF_VAULT_CA", ""),
             controller_env=os.environ.get("VF_CONTROLLER_ENV", cls.controller_env),
             poll_interval=int(os.environ.get("VF_POLL_INTERVAL", "30")),
             task_timeout=int(os.environ.get("VF_TASK_TIMEOUT", "600")),

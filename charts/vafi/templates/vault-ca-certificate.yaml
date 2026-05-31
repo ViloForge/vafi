@@ -1,0 +1,26 @@
+{{- if .Values.vault.caCert.enabled }}
+# Mints a cert from the same issuer that signs the Vault serving cert. We do not
+# use the leaf — only the issuing CA that cert-manager writes into the secret's
+# ca.crt key, which the executor/executor-pi pods mount to verify Vault TLS.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vafi.fullname" . }}-vault-ca
+  labels:
+    {{- include "vafi.labels" . | nindent 4 }}
+  annotations:
+    # Issue before the executor pods (wave 0) so the ca.crt secret exists when
+    # they mount it. ArgoCD tracks Certificate Ready health and waits on it.
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  secretName: {{ include "vafi.vaultCaSecretName" . }}
+  commonName: {{ include "vafi.fullname" . }}-vault-ca-trust
+  duration: 8760h    # 365d
+  renewBefore: 720h  # 30d
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: {{ .Values.vault.caCert.issuerRef.name }}
+    kind: {{ .Values.vault.caCert.issuerRef.kind }}
+{{- end }}

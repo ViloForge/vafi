@@ -220,14 +220,26 @@ vtf:
 
 # ---------------------------------------------------------------------------
 # C.3 variables substrate — Vault-backed secret injection at spawn time.
-# skipVerify=true on dev because the agent pods don't trust the internal
-# Vault CA (L4 finding 2026-05-30). TODO: mount the Vault CA + verify TLS,
-# then flip skipVerify=false (needs a VF_VAULT_CA path option in the reader).
+# Secure-by-default: TLS verification is ON, trusting the internal Vault CA via
+# caCert below (a cert-manager Certificate minted from the same issuer that
+# signs vault.vault.svc carries that CA in its secret's ca.crt). skipVerify is
+# an explicit escape hatch only — leave false.
 # ---------------------------------------------------------------------------
 vault:
   addr: "https://vault.vault.svc:8200"
-  skipVerify: true
+  skipVerify: false
   controllerEnv: "dev"
+  # Mount the internal Vault CA so executor/executor-pi pods can verify the
+  # Vault serving cert without disabling TLS verification. When enabled, the
+  # chart mints a throwaway Certificate from issuerRef (its leaf is unused —
+  # we consume only the secret's ca.crt) and points VF_VAULT_CA at the mount.
+  caCert:
+    enabled: true
+    issuerRef:
+      name: vault-ca-issuer
+      kind: ClusterIssuer
+    secretName: ""                 # default: <fullname>-vault-ca
+    mountPath: /etc/vafi/vault-ca
 
 # ---------------------------------------------------------------------------
 # vfobs observability emission (WG5-min). Default OFF — agents run
