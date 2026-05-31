@@ -43,7 +43,18 @@ class _RecordingEmitter:
         self.emitted.append(record)
 
 
-def _stage(outcomes, work_source=None, emitter=None):
+class _RecordingSnapshotWriter:
+    def __init__(self, fail=False):
+        self.fail = fail
+        self.writes = []
+
+    async def write(self, task_id, snapshot):
+        if self.fail:
+            raise RuntimeError("boom")
+        self.writes.append((task_id, snapshot))
+
+
+def _stage(outcomes, work_source=None, emitter=None, snapshot_writer=None):
     reg = BackendRegistry()
     reg.register("vault", VaultBackend(_FakeReader(outcomes)))
     reg.register("literal", LiteralBackend())
@@ -52,6 +63,7 @@ def _stage(outcomes, work_source=None, emitter=None):
         emitter or _RecordingEmitter(),
         work_source or _FakeWorkSource(),
         controller_env="dev", role="executor", controller_id="ctl-1",
+        snapshot_writer=snapshot_writer,
         now=lambda: "2026-05-30T12:00:00Z",
     )
 
@@ -107,3 +119,28 @@ class TestRecord:
         task = _task([{"name": "GH_TOKEN"}])
         plan = await stage.prepare(task)
         await stage.record(task, plan)  # must not raise despite emitter failure
+
+    async def test_persists_snapshot_with_task_id(self):
+        writer = _RecordingSnapshotWriter()
+        outcomes = {f"{_P}/GH_TOKEN": ReadOutcome(result="success", value=b"ghp_longsecret", version=4)}
+        stage = _stage(outcomes, snapshot_writer=writer)
+        task = _task([{"name": "GH_TOKEN"}], task_id="tk-99")
+        plan = await stage.prepare(task)
+        await stage.record(task, plan)
+        assert writer.writes == [("tk-99", {"GH_TOKEN": 4})]  # name -> vault version
+
+    async def test_snapshot_persist_best_effort_never_raises(self):
+        writer = _RecordingSnapshotWriter(fail=True)
+        outcomes = {f"{_P}/GH_TOKEN": ReadOutcome(result="success", value=b"ghp_longsecret", version=4)}
+        stage = _stage(outcomes, snapshot_writer=writer)
+        task = _task([{"name": "GH_TOKEN"}])
+        plan = await stage.prepare(task)
+        await stage.record(task, plan)  # must not raise despite writer failure
+
+    async def test_no_snapshot_writer_is_noop(self):
+        # Default construction (writer=None) must not raise when a snapshot exists.
+        outcomes = {f"{_P}/GH_TOKEN": ReadOutcome(result="success", value=b"ghp_longsecret", version=4)}
+        stage = _stage(outcomes)
+        task = _task([{"name": "GH_TOKEN"}])
+        plan = await stage.prepare(task)
+        await stage.record(task, plan)
