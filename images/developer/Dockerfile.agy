@@ -1,0 +1,36 @@
+# vafi-developer:agy-<cli-version> — Antigravity CLI (agy) leaf.
+#
+# agy is Google's Gemini-CLI successor (gemini-cli retires for individuals 2026-06-18).
+# Auth = the operator's Google AI Pro OAuth token (materialized by init-agy.sh from
+# AGY_OAUTH_TOKEN, or persisted in the bind-mounted home) — NO API key.
+#
+# FROM the pinned base (build script overrides BASE_TAG to match the current base date).
+
+ARG REGISTRY=vafi
+ARG BASE_TAG=latest
+FROM ${REGISTRY}/vafi-developer-base:${BASE_TAG}
+
+USER root
+
+# Install agy via the official installer (fetches the latest linux_amd64 build, SHA512-verified).
+# Relocate to /usr/local/bin (root-owned → it can't self-update/overwrite inside the container,
+# which keeps the image reproducible). The installer uses `set -o pipefail`, so run it with bash.
+RUN curl -fsSL https://antigravity.google/cli/install.sh -o /tmp/agy-install.sh \
+    && HOME=/tmp/agyhome bash /tmp/agy-install.sh \
+    && mv /tmp/agyhome/.local/bin/agy /usr/local/bin/agy \
+    && chmod 0755 /usr/local/bin/agy \
+    && rm -rf /tmp/agy-install.sh /tmp/agyhome
+
+# Overlay agy-aware vf-harness scripts onto the (possibly older) base:
+#   init.sh    — adds the `agy)` dispatch case
+#   connect.sh — adds the `agy)` interactive case
+#   init-agy.sh — materializes agy auth
+# Once the base is rebuilt with these scripts, this COPY is a redundant no-op.
+COPY vf-harness/init.sh vf-harness/connect.sh vf-harness/init-agy.sh /opt/vf-harness/
+RUN chmod +x /opt/vf-harness/init.sh /opt/vf-harness/connect.sh /opt/vf-harness/init-agy.sh
+
+USER agent
+
+RUN agy --version
+
+ENV VF_HARNESS=agy

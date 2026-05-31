@@ -21,6 +21,10 @@
 set -euo pipefail
 
 REGISTRY="${VAFI_REGISTRY:-vafi}"
+# Where `publish` pushes. The ViloForge Harbor (project `vafi` already exists; the k8s fleet
+# pushes there). Requires `docker login harbor.viloforge.com` first (laptop dev images are not
+# yet built by the in-cluster Argo/kaniko pipeline — see workflow-template-build-vafi.yaml).
+PUBLISH_REGISTRY="${PUBLISH_REGISTRY:-harbor.viloforge.com/vafi}"
 BASE_TAG="${BASE_TAG:-$(date +%Y-%m-%d)}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -28,6 +32,26 @@ CTX="$REPO_ROOT/images/developer"
 
 log() { echo -e "\033[36m==>\033[0m $*" >&2; }
 err() { echo -e "\033[31m!!\033[0m $*" >&2; }
+
+# Retag locally-built ${REGISTRY}/<repo>:<tag> images to ${PUBLISH_REGISTRY}/<repo>:<tag> and push.
+publish() {
+  local target="${1:-}"
+  local repo tags
+  case "$target" in
+    base)               repo=vafi-developer-base; tags="${BASE_TAG} latest" ;;
+    claude|pi|gemini|agy)
+      repo=vafi-developer
+      tags=$(docker images --format '{{.Tag}}' "${REGISTRY}/vafi-developer" | grep -E "^${target}(-|\$)" | tr '\n' ' ')
+      ;;
+    *) err "publish: target required — base|claude|pi|gemini|agy"; exit 2 ;;
+  esac
+  [ -n "${tags// }" ] || { err "publish: no local ${REGISTRY}/${repo}:${target}* images to push"; exit 2; }
+  for t in $tags; do
+    log "Publishing ${PUBLISH_REGISTRY}/${repo}:${t}"
+    docker tag "${REGISTRY}/${repo}:${t}" "${PUBLISH_REGISTRY}/${repo}:${t}"
+    docker push "${PUBLISH_REGISTRY}/${repo}:${t}"
+  done
+}
 
 build_base() {
   log "Building ${REGISTRY}/vafi-developer-base:${BASE_TAG}"
@@ -96,7 +120,7 @@ main() {
     base)
       build_base
       ;;
-    claude|pi|gemini)
+    claude|pi|gemini|agy)
       build_leaf "$target"
       ;;
     all|"")
@@ -104,10 +128,15 @@ main() {
       build_leaf claude
       build_leaf pi
       build_leaf gemini
+      build_leaf agy
+      ;;
+    publish)
+      # publish <base|claude|pi|gemini|agy> — push already-built images to $PUBLISH_REGISTRY
+      publish "${2:-}"
       ;;
     *)
       err "Unknown target: $target"
-      err "Usage: $0 [base|claude|pi|gemini|all]"
+      err "Usage: $0 [base|claude|pi|gemini|agy|all] | publish <target>"
       exit 2
       ;;
   esac

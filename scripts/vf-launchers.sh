@@ -33,9 +33,9 @@ _vafi_dev_run() {
   local version=""
   if [ -n "$arg1" ]; then
     case "$arg1" in
-      claude|pi|gemini|codex|copilot)
+      claude|pi|gemini|agy|codex|copilot)
         harness="$arg1"; shift ;;
-      claude:*|pi:*|gemini:*|codex:*|copilot:*)
+      claude:*|pi:*|gemini:*|agy:*|codex:*|copilot:*)
         harness="${arg1%%:*}"; version="${arg1#*:}"; shift ;;
     esac
   fi
@@ -78,6 +78,14 @@ _vafi_dev_run() {
       GITLAB_TOKEN GITLAB_HOST; do
     [ -n "${!var:-}" ] && env_extra+=(-e "${var}=${!var}")
   done
+
+  # agy (Antigravity CLI) auth: forward the host's Google AI Pro OAuth token so the `agy`
+  # leaf is pre-authenticated (init-agy.sh materializes it). Google refresh tokens are
+  # reusable, so copying does NOT break the host (unlike Claude's single-use refresh tokens).
+  # Ignored by non-agy leaves; the persisted token in <ctx>/home/agent also survives across runs.
+  if [ -f "$HOME/.gemini/antigravity-cli/antigravity-oauth-token" ]; then
+    env_extra+=(-e "AGY_OAUTH_TOKEN=$(cat "$HOME/.gemini/antigravity-cli/antigravity-oauth-token")")
+  fi
 
   # --- Per-context EXTRA_ENV array (defined in vf-launchers-context.sh) ---
   # Use nameref to read the context's array cleanly.

@@ -23,6 +23,9 @@ case "$HARNESS" in
   gemini)
     source /opt/vf-harness/init-gemini.sh
     ;;
+  agy)
+    source /opt/vf-harness/init-agy.sh
+    ;;
   *)
     echo >&2 "[vf-harness] Unknown VF_HARNESS=$HARNESS — skipping harness init"
     ;;
