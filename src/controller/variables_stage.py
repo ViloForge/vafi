@@ -28,6 +28,7 @@ from variables.audit_emitter import HttpAuditEmitter
 from variables.literal import LiteralBackend
 from variables.materializer import InjectionPlan, VariableMaterializer
 from variables.registry import BackendRegistry
+from variables.snapshot_writer import HttpSnapshotWriter
 from variables.vault import VaultBackend
 from variables.vault_reader import KubernetesVaultReader
 
@@ -59,6 +60,7 @@ class VariablesStage:
         controller_env: str,
         role: str,
         controller_id: str,
+        snapshot_writer=None,
         now: Callable[[], str] | None = None,
     ) -> None:
         self._materializer = materializer
@@ -67,6 +69,7 @@ class VariablesStage:
         self._controller_env = controller_env
         self._role = role
         self._controller_id = controller_id
+        self._snapshot_writer = snapshot_writer
         self._now = now or (lambda: datetime.now(timezone.utc).isoformat())
 
     @classmethod
@@ -78,6 +81,7 @@ class VariablesStage:
         registry.register("vault", VaultBackend(reader))
         registry.register("literal", LiteralBackend())
         emitter = HttpAuditEmitter(config.vtf_api_url, agent_token)
+        snapshot_writer = HttpSnapshotWriter(config.vtf_api_url, agent_token)
         return cls(
             VariableMaterializer(registry),
             emitter,
@@ -85,6 +89,7 @@ class VariablesStage:
             controller_env=config.controller_env,
             role=config.agent_role,
             controller_id=config.pod_name or config.agent_id or "vafi-controller",
+            snapshot_writer=snapshot_writer,
         )
 
     async def prepare(self, task) -> InjectionPlan:
@@ -104,10 +109,9 @@ class VariablesStage:
         )
 
     async def record(self, task, plan: InjectionPlan) -> None:
-        """Best-effort: emit one audit row per Vault read (task FK filled in).
+        """Best-effort: emit one audit row per Vault read + persist the snapshot.
 
-        Never raises — audit is forensics, not a spawn gate. Snapshot persistence
-        is deferred until vtaskforge exposes a write surface.
+        Never raises — audit + snapshot are forensics, not a spawn gate.
         """
         for rec in plan.audit_records:
             try:
@@ -117,8 +121,11 @@ class VariablesStage:
                     "variable audit emit failed for %s (task %s): %s",
                     rec.variable_name, task.id, exc,
                 )
-        if plan.snapshot:
-            logger.debug(
-                "secrets_snapshot computed for task %s (%d vars) — persistence deferred",
-                task.id, len(plan.snapshot),
-            )
+        if plan.snapshot and self._snapshot_writer is not None:
+            try:
+                await self._snapshot_writer.write(task.id, plan.snapshot)
+            except Exception as exc:  # noqa: BLE001 - best-effort by design
+                logger.warning(
+                    "secrets_snapshot persist failed for task %s (%d vars): %s",
+                    task.id, len(plan.snapshot), exc,
+                )
