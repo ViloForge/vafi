@@ -335,9 +335,29 @@ class TestFromTask:
 
     def test_test_command_gate_appended_after_delivery(self):
         runner = GateRunner.from_task(self._task({"command": "pytest -q"}), self.repo)
-        assert [g.name for g in runner.gates] == ["deliverable-pushed", "task-test"]
+        # delivery (floor) -> test_command -> tests-were-red efficacy (#32).
+        assert [g.name for g in runner.gates] == [
+            "deliverable-pushed", "task-test", "tests-were-red"]
         assert runner.gates[1].command == "pytest -q"
         assert runner.gates[1].required is True
+
+    def test_efficacy_gate_appended_when_test_command_present(self):
+        """ViloForge/vafi#32: the tests-were-red efficacy gate is synthesized
+        (required) whenever there is a test_command to witness, and embeds the
+        deliverable branch, base branch, and the command it runs without impl."""
+        runner = GateRunner.from_task(self._task({"command": "pytest -q"}), self.repo)
+        eff = runner.gates[-1]
+        assert eff.name == "tests-were-red"
+        assert eff.required is True
+        assert "vafi/task-abc123" in eff.command   # deliverable ref
+        assert "refs/efficacy/base" in eff.command  # base reconstruction
+        assert "pytest -q" in eff.command           # the witnessed command
+
+    def test_no_efficacy_gate_without_test_command(self):
+        """No test_command ⇒ nothing to witness ⇒ no efficacy gate (delivery
+        gate still backstops; bare/no-AC tasks unaffected)."""
+        names = [g.name for g in GateRunner.from_task(self._task(None), self.repo).gates]
+        assert "tests-were-red" not in names
 
     def test_from_task_command_shim_unchanged_v16(self):
         # V16: the old classmethod keeps its old (no-delivery) semantics so
